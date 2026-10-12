@@ -25,6 +25,14 @@
   ],
   "author": "Shopify Edge Guardian Authors",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tkasozi/shopify-edge-guardian"
+  },
+  "homepage": "https://github.com/tkasozi/shopify-edge-guardian#readme",
+  "bugs": {
+    "url": "https://github.com/tkasozi/shopify-edge-guardian/issues"
+  },
   "files": [
     "dist",
     "action.yml",
