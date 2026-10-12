@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.2] - 2026-10-12
+
+### Added
+- **Project Configuration Subsystem (`.edgeguardianrc.json` & `shopify.app.toml [edge_guardian]`):**
+  - Projects can now define `.edgeguardianrc.json`, `.edgeguardian.json`, `edge-guardian.json`, or a `[edge_guardian]` section inside `shopify.app.toml`.
+  - Added support for custom `ignore: string[]` glob patterns and file lists across all analyzers.
+  - Added support for project-level rule overrides (`rules: Record<string, "off" | "warning" | "error" | "info">`).
+  - Added support for `wasm: { required: false }` to explicitly declare pure Node/Remix apps without Rust Shopify Functions.
+  - Added `--config` / `-c` CLI option to specify a custom configuration file path.
+- **Default Exclusion for Developer & Release Documentation:**
+  - `ReviewAnalyzer` now automatically excludes internal engineering release notes, changelogs, licenses, and contributor files (`RELEASE_NOTES.md`, `CHANGELOG.md`, `CHANGES.md`, `HISTORY.md`, `TODO.md`, `CONTRIBUTING.md`, `LICENSE.md`, `SECURITY.md`, etc.).
+  - Default directories like `test`, `tests`, `__tests__`, `spec`, `docs`, and `.agents` are automatically bypassed from marketing superlative and deprecation scans.
+- **Intelligent Non-Rust Project Auto-Detection in Wasm Profiler:**
+  - Projects without `Cargo.toml` or `extensions/**/Cargo.toml` automatically suppress the `WASM_BINARY_NOT_FOUND` informational notice unless `wasm.required = true` is explicitly configured.
+
+### Fixed
+- **Engineering Statements in Superlative Absolute Rule (`SUPERLATIVE_ABSOLUTE_CAPABILITY`):**
+  - Removed generic `success` from absolute capability regex to prevent false flagging technical unit test reports (e.g. "All 14 automated unit tests passed with 100% success").
+  - Fixed regex word boundary matching for `#1` superlative claims (`SUPERLATIVE_THE_BEST`) when preceded by whitespace.
+
+---
+
 ## [1.0.1] - 2026-10-12
 
 ### Added

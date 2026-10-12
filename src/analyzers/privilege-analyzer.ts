@@ -1,8 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Finding, PrivilegeUsageResult } from '../types/index.js';
+import { EdgeGuardianConfig, Finding, PrivilegeUsageResult } from '../types/index.js';
 import { SCOPE_USAGE_MAP, SUSPICIOUS_HIGH_RISK_SCOPES } from '../rules/shopify-rules.js';
-import { isIgnoredFile, maskComments } from '../utils/sanitizer.js';
+import { isIgnoredFile, maskComments, matchesIgnore } from '../utils/sanitizer.js';
+import { ConfigLoader } from '../config/config-loader.js';
 
 export class PrivilegeAnalyzer {
   /**
@@ -10,8 +11,8 @@ export class PrivilegeAnalyzer {
    * in shopify.app.toml are actively used. Flagging unused scopes protects developers
    * from App Store rejection under the Shopify Principle of Least Privilege (Section 3.2).
    */
-  public analyze(projectRoot: string, scopesRequested: string[]): PrivilegeUsageResult {
-    const findings: Finding[] = [];
+  public analyze(projectRoot: string, scopesRequested: string[], config?: EdgeGuardianConfig): PrivilegeUsageResult {
+    let findings: Finding[] = [];
     const usedScopes: string[] = [];
     const unusedScopes: string[] = [];
     const overprivilegedWrites: string[] = [];
@@ -28,7 +29,7 @@ export class PrivilegeAnalyzer {
     }
 
     // Collect all source files
-    const sourceFiles = this.collectSourceFiles(projectRoot);
+    const sourceFiles = this.collectSourceFiles(projectRoot, [], config?.ignore, projectRoot);
     const fileContents: { path: string; content: string }[] = [];
 
     for (const file of sourceFiles) {
@@ -168,6 +169,7 @@ export class PrivilegeAnalyzer {
       }
     }
 
+    findings = ConfigLoader.applyRuleOverrides(findings, config?.rules);
     const passed = !findings.some((f) => f.severity === 'ERROR');
 
     return {
@@ -180,7 +182,12 @@ export class PrivilegeAnalyzer {
     };
   }
 
-  private collectSourceFiles(dir: string, fileList: string[] = []): string[] {
+  private collectSourceFiles(
+    dir: string,
+    fileList: string[] = [],
+    customIgnores?: string[],
+    projectRoot: string = dir
+  ): string[] {
     if (!fs.existsSync(dir)) return fileList;
     let entries: fs.Dirent[] = [];
     try {
@@ -191,14 +198,21 @@ export class PrivilegeAnalyzer {
 
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
+      const lowerName = entry.name.toLowerCase();
 
       if (entry.isDirectory()) {
-        if (['node_modules', '.git', 'dist', 'build', 'target', '.next', '.cache'].includes(entry.name)) {
+        if (
+          ['node_modules', '.git', 'dist', 'build', 'target', '.next', '.cache', 'fixtures', 'test', 'tests', '__tests__', 'spec', 'specs', '.agents'].includes(lowerName) ||
+          matchesIgnore(fullPath, projectRoot, customIgnores)
+        ) {
           continue;
         }
-        this.collectSourceFiles(fullPath, fileList);
+        this.collectSourceFiles(fullPath, fileList, customIgnores, projectRoot);
       } else if (entry.isFile()) {
-        if (isIgnoredFile(fullPath)) {
+        if (
+          isIgnoredFile(fullPath, customIgnores, projectRoot) ||
+          matchesIgnore(fullPath, projectRoot, customIgnores)
+        ) {
           continue;
         }
         const ext = path.extname(entry.name).toLowerCase();

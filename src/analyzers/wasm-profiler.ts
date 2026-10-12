@@ -1,21 +1,28 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Finding, WasmProfileResult } from '../types/index.js';
+import { EdgeGuardianConfig, Finding, WasmProfileResult } from '../types/index.js';
 import { SHOPIFY_PERFORMANCE_LIMITS } from '../rules/shopify-rules.js';
+import { ConfigLoader } from '../config/config-loader.js';
 
 export class WasmProfiler {
   /**
    * Analyzes a compiled Shopify Function .wasm file or workspace
    * for binary size, LTO configuration, and estimated edge runtime.
    */
-  public profile(wasmPathOrWorkspace: string): WasmProfileResult {
-    const findings: Finding[] = [];
+  public profile(wasmPathOrWorkspace: string, config?: EdgeGuardianConfig): WasmProfileResult {
+    let findings: Finding[] = [];
     let wasmFilePath = wasmPathOrWorkspace;
 
-    if (fs.existsSync(wasmPathOrWorkspace)) {
-      const stats = fs.statSync(wasmPathOrWorkspace);
+    if (config?.wasm?.wasmPath) {
+      wasmFilePath = path.isAbsolute(config.wasm.wasmPath)
+        ? config.wasm.wasmPath
+        : path.join(wasmPathOrWorkspace, config.wasm.wasmPath);
+    }
+
+    if (fs.existsSync(wasmFilePath)) {
+      const stats = fs.statSync(wasmFilePath);
       if (stats.isDirectory()) {
-        const found = this.findWasmFile(wasmPathOrWorkspace);
+        const found = this.findWasmFile(wasmFilePath);
         if (found) {
           wasmFilePath = found;
         }
@@ -23,17 +30,25 @@ export class WasmProfiler {
     }
 
     if (!fs.existsSync(wasmFilePath) || !wasmFilePath.endsWith('.wasm')) {
-      findings.push({
-        id: 'WASM_BINARY_NOT_FOUND',
-        category: 'WASM_PERFORMANCE',
-        severity: 'INFO',
-        title: 'No Compiled .wasm Binary Found',
-        message: `Could not locate a .wasm file at ${wasmFilePath}. Ensure 'cargo build --target wasm32-unknown-unknown --release' was executed.`,
-        remediation: 'Build your Rust Shopify Function to enable edge performance verification.',
-      });
+      const isRequired = config?.wasm?.required;
+      const hasRust = this.hasRustProject(wasmPathOrWorkspace);
+
+      // Only report WASM_BINARY_NOT_FOUND if explicitly required or if a Rust Cargo.toml project is detected
+      if (isRequired === true || (isRequired === undefined && hasRust)) {
+        findings.push({
+          id: 'WASM_BINARY_NOT_FOUND',
+          category: 'WASM_PERFORMANCE',
+          severity: 'INFO',
+          title: 'No Compiled .wasm Binary Found',
+          message: `Could not locate a .wasm file at ${wasmFilePath}. Ensure 'cargo build --target wasm32-unknown-unknown --release' was executed.`,
+          remediation: 'Build your Rust Shopify Function to enable edge performance verification.',
+        });
+      }
+
+      findings = ConfigLoader.applyRuleOverrides(findings, config?.rules);
 
       return {
-        passed: true, // Non-fatal if repo is purely theme/admin
+        passed: !findings.some((f) => f.severity === 'ERROR'),
         filePath: wasmFilePath,
         sizeBytes: 0,
         budgetBytes: SHOPIFY_PERFORMANCE_LIMITS.WASM_SIZE_BUDGET_BYTES,
@@ -153,6 +168,7 @@ export class WasmProfiler {
       });
     }
 
+    findings = ConfigLoader.applyRuleOverrides(findings, config?.rules);
     const passed = !findings.some((f) => f.severity === 'ERROR');
 
     return {
@@ -166,6 +182,37 @@ export class WasmProfiler {
       hasOptimizedLto,
       findings,
     };
+  }
+
+  private hasRustProject(dirOrFile: string): boolean {
+    if (!fs.existsSync(dirOrFile)) return false;
+    let startDir = dirOrFile;
+    try {
+      const stats = fs.statSync(dirOrFile);
+      startDir = stats.isDirectory() ? dirOrFile : path.dirname(dirOrFile);
+    } catch {
+      return false;
+    }
+
+    if (fs.existsSync(path.join(startDir, 'Cargo.toml'))) {
+      return true;
+    }
+
+    const extensionsDir = path.join(startDir, 'extensions');
+    if (fs.existsSync(extensionsDir)) {
+      try {
+        const entries = fs.readdirSync(extensionsDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory() && fs.existsSync(path.join(extensionsDir, entry.name, 'Cargo.toml'))) {
+            return true;
+          }
+        }
+      } catch {
+        // Ignore
+      }
+    }
+
+    return false;
   }
 
   private findWasmFile(startDir: string): string | null {

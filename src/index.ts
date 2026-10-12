@@ -3,10 +3,11 @@ import { DeprecationAnalyzer } from './analyzers/deprecation-analyzer.js';
 import { WasmProfiler } from './analyzers/wasm-profiler.js';
 import { BfsCanary } from './analyzers/bfs-canary.js';
 import { PrivilegeAnalyzer } from './analyzers/privilege-analyzer.js';
-import { ReviewAnalyzer } from './analyzers/review-analyzer.js';
+import { ReviewAnalyzer, AiEvaluatorConfig } from './analyzers/review-analyzer.js';
 import { FleetManager } from './fleet/fleet-manager.js';
 import { MarkdownReporter } from './reporter/markdown-reporter.js';
-import { GuardianReport } from './types/index.js';
+import { EdgeGuardianConfig, GuardianReport } from './types/index.js';
+import { ConfigLoader } from './config/config-loader.js';
 
 export * from './types/index.js';
 export * from './rules/shopify-rules.js';
@@ -18,6 +19,7 @@ export { PrivilegeAnalyzer } from './analyzers/privilege-analyzer.js';
 export { ReviewAnalyzer, PluggableAiEvaluator, AiEvaluatorConfig } from './analyzers/review-analyzer.js';
 export { FleetManager } from './fleet/fleet-manager.js';
 export { MarkdownReporter } from './reporter/markdown-reporter.js';
+export { ConfigLoader, CONFIG_FILE_CANDIDATES } from './config/config-loader.js';
 
 export class ShopifyEdgeGuardian {
   private complianceAnalyzer = new ComplianceAnalyzer();
@@ -35,12 +37,17 @@ export class ShopifyEdgeGuardian {
    * 4. Quarterly GraphQL & REST API Deprecations
    * 5. Rust WebAssembly Edge Performance Profile (256KB, 5.0ms)
    */
-  public runAudit(projectRoot: string): GuardianReport {
-    const compliance = this.complianceAnalyzer.analyze(projectRoot);
-    const privilegeUsage = this.privilegeAnalyzer.analyze(projectRoot, compliance.scopesRequested);
-    const reviewRequirements = this.reviewAnalyzer.analyze(projectRoot);
-    const deprecation = this.deprecationAnalyzer.scanDirectory(projectRoot);
-    const wasmProfile = this.wasmProfiler.profile(projectRoot);
+  public runAudit(
+    projectRoot: string,
+    options?: { config?: EdgeGuardianConfig; configPath?: string }
+  ): GuardianReport {
+    const config = options?.config || ConfigLoader.loadConfig(projectRoot, options?.configPath);
+
+    const compliance = this.complianceAnalyzer.analyze(projectRoot, config);
+    const privilegeUsage = this.privilegeAnalyzer.analyze(projectRoot, compliance.scopesRequested, config);
+    const reviewRequirements = this.reviewAnalyzer.analyze(projectRoot, config);
+    const deprecation = this.deprecationAnalyzer.scanDirectory(projectRoot, config);
+    const wasmProfile = this.wasmProfiler.profile(projectRoot, config);
 
     const totalErrors =
       compliance.findings.filter((f) => f.severity === 'ERROR').length +
@@ -86,13 +93,23 @@ export class ShopifyEdgeGuardian {
    */
   public async runAuditAsync(
     projectRoot: string,
-    options?: { enableAi?: boolean; aiConfig?: import('./analyzers/review-analyzer.js').AiEvaluatorConfig }
+    options?: {
+      enableAi?: boolean;
+      aiConfig?: AiEvaluatorConfig;
+      config?: EdgeGuardianConfig;
+      configPath?: string;
+    }
   ): Promise<GuardianReport> {
-    const compliance = this.complianceAnalyzer.analyze(projectRoot);
-    const privilegeUsage = this.privilegeAnalyzer.analyze(projectRoot, compliance.scopesRequested);
-    const reviewRequirements = await this.reviewAnalyzer.analyzeAsync(projectRoot, options?.aiConfig);
-    const deprecation = this.deprecationAnalyzer.scanDirectory(projectRoot);
-    const wasmProfile = this.wasmProfiler.profile(projectRoot);
+    const config = options?.config || ConfigLoader.loadConfig(projectRoot, options?.configPath);
+
+    const compliance = this.complianceAnalyzer.analyze(projectRoot, config);
+    const privilegeUsage = this.privilegeAnalyzer.analyze(projectRoot, compliance.scopesRequested, config);
+    const reviewRequirements = await this.reviewAnalyzer.analyzeAsync(projectRoot, {
+      aiConfig: options?.aiConfig,
+      config,
+    });
+    const deprecation = this.deprecationAnalyzer.scanDirectory(projectRoot, config);
+    const wasmProfile = this.wasmProfiler.profile(projectRoot, config);
 
     const totalErrors =
       compliance.findings.filter((f) => f.severity === 'ERROR').length +

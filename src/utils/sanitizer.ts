@@ -18,9 +18,117 @@ export const IGNORED_LOCKFILES = new Set([
 ]);
 
 /**
+ * Developer documentation, changelogs, release notes, and contributor files
+ * that are internal to engineering and must never be evaluated as merchant-facing listing copy.
+ */
+export const DEFAULT_REVIEW_IGNORED_FILES = new Set([
+  'release_notes.md',
+  'release_notes',
+  'release-notes.md',
+  'releasenotes.md',
+  'changelog.md',
+  'changelog',
+  'changes.md',
+  'history.md',
+  'contributing.md',
+  'contributing',
+  'license.md',
+  'license',
+  'licence.md',
+  'licence',
+  'security.md',
+  'security',
+  'code_of_conduct.md',
+  'todo.md',
+  'architecture.md',
+]);
+
+/**
+ * Standard developer and testing directories that are excluded from marketing copy analysis.
+ */
+export const DEFAULT_REVIEW_IGNORED_DIRS = new Set([
+  'node_modules',
+  '.git',
+  '.github',
+  '.agents',
+  'dist',
+  'build',
+  'target',
+  '.next',
+  '.cache',
+  'fixtures',
+  'test',
+  'tests',
+  '__tests__',
+  'spec',
+  'specs',
+  'docs',
+  'doc',
+  'documentation',
+]);
+
+/**
+ * Converts a glob pattern (e.g. "docs/**", "*.test.ts", "RELEASE_NOTES.md") into a RegExp.
+ */
+export function globToRegex(glob: string): RegExp {
+  let normalized = glob.replace(/\\/g, '/').trim();
+  const startsWithSlash = normalized.startsWith('/');
+  if (startsWithSlash) {
+    normalized = normalized.slice(1);
+  }
+
+  const regexStr = normalized
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '§§GLOBSTAR§§')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\?/g, '[^/]')
+    .replace(/§§GLOBSTAR§§\//g, '(?:.*/)?')
+    .replace(/§§GLOBSTAR§§/g, '.*');
+
+  if (startsWithSlash) {
+    return new RegExp(`^${regexStr}(?:/.*)?$`, 'i');
+  }
+  return new RegExp(`(?:^|/)${regexStr}(?:/.*)?$`, 'i');
+}
+
+/**
+ * Tests whether a given file path matches any custom ignore glob or filename.
+ */
+export function matchesIgnore(filePath: string, projectRoot?: string, patterns?: string[]): boolean {
+  if (!patterns || patterns.length === 0) return false;
+
+  const normalizedFull = filePath.replace(/\\/g, '/');
+  const baseName = path.basename(filePath).toLowerCase();
+  const relPath = projectRoot
+    ? path.relative(projectRoot, filePath).replace(/\\/g, '/')
+    : normalizedFull;
+
+  for (const pattern of patterns) {
+    if (!pattern || typeof pattern !== 'string') continue;
+    const cleanPattern = pattern.trim().replace(/\\/g, '/');
+    if (!cleanPattern) continue;
+
+    if (baseName === cleanPattern.toLowerCase()) {
+      return true;
+    }
+
+    try {
+      const regex = globToRegex(cleanPattern);
+      if (regex.test(relPath) || regex.test(baseName) || regex.test(normalizedFull)) {
+        return true;
+      }
+    } catch {
+      // Ignore malformed regex
+    }
+  }
+
+  return false;
+}
+
+/**
  * Checks whether a given file path should be completely excluded from scanning.
  */
-export function isIgnoredFile(filePath: string): boolean {
+export function isIgnoredFile(filePath: string, customIgnores?: string[], projectRoot?: string): boolean {
   const baseName = path.basename(filePath).toLowerCase();
 
   if (IGNORED_LOCKFILES.has(baseName)) {
@@ -33,6 +141,10 @@ export function isIgnoredFile(filePath: string): boolean {
 
   // Minified bundles, source maps, and binary build artifacts
   if (baseName.endsWith('.min.js') || baseName.endsWith('.min.css') || baseName.endsWith('.map')) {
+    return true;
+  }
+
+  if (customIgnores && projectRoot && matchesIgnore(filePath, projectRoot, customIgnores)) {
     return true;
   }
 

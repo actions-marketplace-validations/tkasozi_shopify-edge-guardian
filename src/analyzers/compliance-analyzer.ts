@@ -1,16 +1,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { ComplianceResult, Finding } from '../types/index.js';
+import { ComplianceResult, EdgeGuardianConfig, Finding } from '../types/index.js';
 import { MANDATORY_GDPR_WEBHOOKS, SUSPICIOUS_HIGH_RISK_SCOPES } from '../rules/shopify-rules.js';
 import { maskComments } from '../utils/sanitizer.js';
+import { ConfigLoader } from '../config/config-loader.js';
 
 export class ComplianceAnalyzer {
   /**
    * Analyzes a repository root or shopify.app.toml for compliance with
    * Shopify App Store submission guidelines and Least Privilege rules.
    */
-  public analyze(projectRootOrConfigPath: string): ComplianceResult {
-    const findings: Finding[] = [];
+  public analyze(projectRootOrConfigPath: string, config?: EdgeGuardianConfig): ComplianceResult {
+    let findings: Finding[] = [];
     let configContent = '';
     let configFilePath = projectRootOrConfigPath;
 
@@ -31,8 +32,10 @@ export class ComplianceAnalyzer {
         remediation: 'Ensure shopify.app.toml exists in your repository root.',
       });
 
+      findings = ConfigLoader.applyRuleOverrides(findings, config?.rules);
+
       return {
-        passed: false,
+        passed: !findings.some((f) => f.severity === 'ERROR'),
         hasGdprCustomersDataRequest: false,
         hasGdprCustomersRedact: false,
         hasGdprShopRedact: false,
@@ -161,6 +164,7 @@ export class ComplianceAnalyzer {
       }
     }
 
+    findings = ConfigLoader.applyRuleOverrides(findings, config?.rules);
     const passed = !findings.some((f) => f.severity === 'ERROR');
 
     return {

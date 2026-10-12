@@ -215,7 +215,7 @@ export const APP_STORE_REVIEW_RULES: ReviewRule[] = [
   // 1. Exaggerated / Superlative Language & NLP Rules (Shopify App Store Requirements 4.3.3 & 4.3.4)
   {
     id: 'SUPERLATIVE_THE_BEST',
-    pattern: /\b(?:the\s+best|#1\b|number\s+one|world's\s+leading|most\s+popular|highest\s+rated|top[- ]rated|best[- ]selling)\b/i,
+    pattern: /(?:\b(?:the\s+best|number\s+one|world's\s+leading|most\s+popular|highest\s+rated|top[- ]rated|best[- ]selling)\b|(?:^|\s)#1\b)/i,
     category: 'EXAGGERATED_LANGUAGE',
     severity: 'ERROR',
     title: 'Exaggerated / Superlative Language Detected',
@@ -260,7 +260,7 @@ export const APP_STORE_REVIEW_RULES: ReviewRule[] = [
   },
   {
     id: 'SUPERLATIVE_ABSOLUTE_CAPABILITY',
-    pattern: /\b(?:100%\s+(?:guaranteed|success|fail[- ]safe|bulletproof)|infinitely\s+scalable|zero\s+risk|foolproof)\b/i,
+    pattern: /\b(?:100%\s+(?:guaranteed|guarantee|risk[- ]free|satisfaction|money[- ]back|fail[- ]safe|bulletproof)|infinitely\s+scalable|zero\s+risk|foolproof)\b/i,
     category: 'EXAGGERATED_LANGUAGE',
     severity: 'ERROR',
     title: 'Absolute / Unconditional Capability Claim Detected',

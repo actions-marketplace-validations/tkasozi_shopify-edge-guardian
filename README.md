@@ -59,6 +59,42 @@ npx shopify-edge-guardian check --json
 
 # Run with optional pluggable AI semantic audit (reads GUARDIAN_AI_KEY or OPENAI_API_KEY)
 npx shopify-edge-guardian check --ai
+
+# Pass a custom configuration file path
+npx shopify-edge-guardian check --config ./custom-guardian.json
+```
+
+### Project Configuration (`.edgeguardianrc.json` or `shopify.app.toml`)
+Customize file ignores, rule overrides, or disable Wasm requirements for pure Node/Remix apps by adding `.edgeguardianrc.json` to your repository root:
+
+```json
+{
+  "ignore": [
+    "RELEASE_NOTES.md",
+    "docs/**",
+    "legacy-api/**"
+  ],
+  "rules": {
+    "SUPERLATIVE_ABSOLUTE_CAPABILITY": "off",
+    "WASM_BINARY_NOT_FOUND": "off",
+    "APP_NOT_EMBEDDED": "warning"
+  },
+  "wasm": {
+    "required": false
+  }
+}
+```
+
+Or configure directly inside `shopify.app.toml`:
+```toml
+[edge_guardian]
+ignore = ["RELEASE_NOTES.md", "docs/**"]
+
+[edge_guardian.rules]
+SUPERLATIVE_EXCLUSIVITY = "off"
+
+[edge_guardian.wasm]
+required = false
 ```
 
 ### GitHub Actions CI/CD (`.github/workflows/ci.yml`)

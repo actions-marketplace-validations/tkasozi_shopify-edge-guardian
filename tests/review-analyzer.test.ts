@@ -204,4 +204,95 @@ describe('ReviewAnalyzer (Shopify App Store Review Blockers)', () => {
     expect(result.insecurePatternsFound).toBe(false);
     expect(result.findings).toHaveLength(0);
   });
+
+  it('ignores RELEASE_NOTES.md, CHANGELOG.md, and test directories by default', () => {
+    const dirReleaseNotes = path.join(testRoot, 'release-notes-app');
+    fs.mkdirSync(dirReleaseNotes, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(dirReleaseNotes, 'shopify.app.toml'),
+      `name = "Release Tool for Shopify"\nembedded = true\n`
+    );
+
+    // RELEASE_NOTES.md with phrases that would normally trigger rules if in marketing copy
+    fs.writeFileSync(
+      path.join(dirReleaseNotes, 'RELEASE_NOTES.md'),
+      `# Release Notes v1.0.0\nAll 14 automated unit tests passed with 100% success:\nWe built the fastest parser.`
+    );
+
+    // CHANGELOG.md
+    fs.writeFileSync(
+      path.join(dirReleaseNotes, 'CHANGELOG.md'),
+      `# Changelog\n- Added #1 optimization algorithm.`
+    );
+
+    // Clean README.md
+    fs.writeFileSync(
+      path.join(dirReleaseNotes, 'README.md'),
+      `# Release Tool\nAutomates store synchronization.`
+    );
+
+    const result = analyzer.analyze(dirReleaseNotes);
+
+    expect(result.passed).toBe(true);
+    expect(result.exaggeratedLanguageFound).toBe(false);
+    expect(result.findings).toHaveLength(0);
+  });
+
+  it('does not flag engineering statements like "tests passed with 100% success"', () => {
+    const dirEngSuccess = path.join(testRoot, 'eng-success-app');
+    fs.mkdirSync(dirEngSuccess, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(dirEngSuccess, 'shopify.app.toml'),
+      `name = "Test Tracker for Shopify"\nembedded = true\n`
+    );
+
+    fs.writeFileSync(
+      path.join(dirEngSuccess, 'README.md'),
+      `# Test Tracker\nAll 14 automated unit tests passed with 100% success: CI integration verified.`
+    );
+
+    const result = analyzer.analyze(dirEngSuccess);
+
+    expect(result.passed).toBe(true);
+    expect(result.exaggeratedLanguageFound).toBe(false);
+    expect(result.findings).toHaveLength(0);
+  });
+
+  it('respects custom ignore patterns and rule overrides in EdgeGuardianConfig', () => {
+    const dirConfigApp = path.join(testRoot, 'custom-config-app');
+    fs.mkdirSync(dirConfigApp, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(dirConfigApp, 'shopify.app.toml'),
+      `name = "Custom App for Shopify"\nembedded = true\n`
+    );
+
+    fs.writeFileSync(
+      path.join(dirConfigApp, 'marketing-draft.md'),
+      `# Draft\nThis is the #1 tool in the world.`
+    );
+
+    fs.writeFileSync(
+      path.join(dirConfigApp, 'README.md'),
+      `# Custom App\nGuaranteed 100% results.`
+    );
+
+    // 1. Without ignore or rule overrides, both files trigger errors
+    const unconfigured = analyzer.analyze(dirConfigApp);
+    expect(unconfigured.passed).toBe(false);
+    expect(unconfigured.findings.length).toBeGreaterThanOrEqual(2);
+
+    // 2. With ignore on marketing-draft.md and rule override for UNSUBSTANTIATED_GUARANTEE
+    const configured = analyzer.analyze(dirConfigApp, {
+      ignore: ['marketing-draft.md'],
+      rules: {
+        UNSUBSTANTIATED_GUARANTEE: 'off',
+      },
+    });
+
+    expect(configured.passed).toBe(true);
+    expect(configured.findings).toHaveLength(0);
+  });
 });

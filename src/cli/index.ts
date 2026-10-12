@@ -9,6 +9,7 @@ function parseArgs(args: string[]) {
   let jsonOutput = false;
   let enableAi = false;
   let outputFile: string | null = null;
+  let configPath: string | undefined = undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -22,23 +23,27 @@ function parseArgs(args: string[]) {
       if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
         outputFile = args[++i];
       }
+    } else if (arg === '--config' || arg === '-c') {
+      if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
+        configPath = args[++i];
+      }
     } else if (!arg.startsWith('-') && arg !== 'check') {
       targetPath = path.resolve(arg);
     }
   }
 
-  return { targetPath, failOnWarning, jsonOutput, enableAi, outputFile };
+  return { targetPath, failOnWarning, jsonOutput, enableAi, outputFile, configPath };
 }
 
 async function main() {
   try {
     const args = process.argv.slice(2);
-    const { targetPath, failOnWarning, jsonOutput, enableAi, outputFile } = parseArgs(args);
+    const { targetPath, failOnWarning, jsonOutput, enableAi, outputFile, configPath } = parseArgs(args);
 
     const guardian = new ShopifyEdgeGuardian();
     const report = enableAi
-      ? await guardian.runAuditAsync(targetPath, { enableAi: true })
-      : guardian.runAudit(targetPath);
+      ? await guardian.runAuditAsync(targetPath, { enableAi: true, configPath })
+      : guardian.runAudit(targetPath, { configPath });
 
     if (outputFile) {
       const outDir = path.dirname(path.resolve(outputFile));

@@ -1,8 +1,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Finding, ReviewRequirementsResult } from '../types/index.js';
+import { EdgeGuardianConfig, Finding, ReviewRequirementsResult } from '../types/index.js';
 import { APP_STORE_REVIEW_RULES, NON_SUPERLATIVE_EST_WORDS } from '../rules/shopify-rules.js';
-import { isIgnoredFile, maskComments } from '../utils/sanitizer.js';
+import {
+  DEFAULT_REVIEW_IGNORED_DIRS,
+  DEFAULT_REVIEW_IGNORED_FILES,
+  isIgnoredFile,
+  maskComments,
+  matchesIgnore,
+} from '../utils/sanitizer.js';
+import { ConfigLoader } from '../config/config-loader.js';
 
 export class ReviewAnalyzer {
   /**
@@ -14,8 +21,8 @@ export class ReviewAnalyzer {
    * 4. Hardcoded Access Tokens & API Secrets (Section 3.1)
    * 5. External Checkout & Billing Bypasses (Section 1.1.2 & 1.2.1)
    */
-  public analyze(projectRoot: string): ReviewRequirementsResult {
-    const findings: Finding[] = [];
+  public analyze(projectRoot: string, config?: EdgeGuardianConfig): ReviewRequirementsResult {
+    let findings: Finding[] = [];
     let exaggeratedLanguageFound = false;
     let brandMisuseFound = false;
     let insecurePatternsFound = false;
@@ -64,7 +71,7 @@ export class ReviewAnalyzer {
     }
 
     // 2. Scan Text, Listing, and Source Files for Review Blockers
-    const filesToScan = this.collectFilesToScan(projectRoot);
+    const filesToScan = this.collectFilesToScan(projectRoot, [], config?.ignore, projectRoot);
 
     for (const file of filesToScan) {
       let content = '';
@@ -158,6 +165,15 @@ export class ReviewAnalyzer {
       }
     }
 
+    findings = ConfigLoader.applyRuleOverrides(findings, config?.rules);
+    exaggeratedLanguageFound = findings.some(
+      (f) => f.category === 'APP_STORE_REVIEW' && (f.id.startsWith('SUPERLATIVE_') || f.id.startsWith('UNSUBSTANTIATED_') || f.id === 'NUMERICAL_CONVERSION_CLAIM')
+    );
+    brandMisuseFound = findings.some((f) => f.id === 'APP_NAME_BRAND_MISUSE' || f.id.startsWith('BRAND_'));
+    insecurePatternsFound = findings.some((f) =>
+      ['THEME_LIQUID_OVERWRITE', 'HARDCODED_ADMIN_TOKEN', 'HARDCODED_CUSTOM_TOKEN', 'CHECKOUT_BYPASS_DETECTED'].includes(f.id)
+    );
+
     const passed = !findings.some((f) => f.severity === 'ERROR');
 
     return {
@@ -175,13 +191,26 @@ export class ReviewAnalyzer {
    * Performs review requirements audit and additionally invokes the pluggable
    * AI evaluator on listing documentation/markdown files if enabled or configured.
    */
-  public async analyzeAsync(projectRoot: string, aiConfig?: AiEvaluatorConfig): Promise<ReviewRequirementsResult> {
-    const result = this.analyze(projectRoot);
+  public async analyzeAsync(
+    projectRoot: string,
+    optionsOrAiConfig?: AiEvaluatorConfig | { aiConfig?: AiEvaluatorConfig; config?: EdgeGuardianConfig }
+  ): Promise<ReviewRequirementsResult> {
+    const aiConfig =
+      optionsOrAiConfig && ('apiKey' in optionsOrAiConfig || 'mockResponse' in optionsOrAiConfig || 'enabled' in optionsOrAiConfig)
+        ? (optionsOrAiConfig as AiEvaluatorConfig)
+        : (optionsOrAiConfig as { aiConfig?: AiEvaluatorConfig; config?: EdgeGuardianConfig })?.aiConfig;
+
+    const config =
+      optionsOrAiConfig && 'config' in optionsOrAiConfig
+        ? (optionsOrAiConfig as { aiConfig?: AiEvaluatorConfig; config?: EdgeGuardianConfig }).config
+        : undefined;
+
+    const result = this.analyze(projectRoot, config);
     if (!this.aiEvaluator.isAvailable(aiConfig)) {
       return result;
     }
 
-    const marketingFiles = this.collectFilesToScan(projectRoot).filter((f) => {
+    const marketingFiles = this.collectFilesToScan(projectRoot, [], config?.ignore, projectRoot).filter((f) => {
       const ext = path.extname(f).toLowerCase();
       return ['.md', '.txt', '.json'].includes(ext);
     });
@@ -203,11 +232,17 @@ export class ReviewAnalyzer {
       }
     }
 
+    result.findings = ConfigLoader.applyRuleOverrides(result.findings, config?.rules);
     result.passed = !result.findings.some((f) => f.severity === 'ERROR');
     return result;
   }
 
-  private collectFilesToScan(dir: string, fileList: string[] = []): string[] {
+  private collectFilesToScan(
+    dir: string,
+    fileList: string[] = [],
+    customIgnores?: string[],
+    projectRoot: string = dir
+  ): string[] {
     if (!fs.existsSync(dir)) return fileList;
     let entries: fs.Dirent[] = [];
     try {
@@ -218,14 +253,22 @@ export class ReviewAnalyzer {
 
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
+      const lowerName = entry.name.toLowerCase();
 
       if (entry.isDirectory()) {
-        if (['node_modules', '.git', 'dist', 'build', 'target', '.next', '.cache', 'fixtures'].includes(entry.name)) {
+        if (
+          DEFAULT_REVIEW_IGNORED_DIRS.has(lowerName) ||
+          matchesIgnore(fullPath, projectRoot, customIgnores)
+        ) {
           continue;
         }
-        this.collectFilesToScan(fullPath, fileList);
+        this.collectFilesToScan(fullPath, fileList, customIgnores, projectRoot);
       } else if (entry.isFile()) {
-        if (isIgnoredFile(fullPath)) {
+        if (
+          isIgnoredFile(fullPath, customIgnores, projectRoot) ||
+          DEFAULT_REVIEW_IGNORED_FILES.has(lowerName) ||
+          matchesIgnore(fullPath, projectRoot, customIgnores)
+        ) {
           continue;
         }
         const ext = path.extname(entry.name).toLowerCase();

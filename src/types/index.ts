@@ -1,5 +1,43 @@
 export type Severity = 'ERROR' | 'WARNING' | 'INFO';
 
+export type RuleOverride = 'off' | 'warning' | 'error' | 'info';
+
+export interface EdgeGuardianConfig {
+  /**
+   * File paths or glob patterns to ignore across all scans.
+   * e.g. ["RELEASE_NOTES.md", "docs/**", "tests/**"]
+   */
+  ignore?: string[];
+
+  /**
+   * Rule overrides mapping rule ID to desired status or severity.
+   * e.g. { "SUPERLATIVE_ABSOLUTE_CAPABILITY": "off", "WASM_BINARY_NOT_FOUND": "off" }
+   */
+  rules?: Record<string, RuleOverride>;
+
+  /**
+   * WebAssembly profiling settings
+   */
+  wasm?: {
+    /**
+     * Set to false if the project does not use Rust Shopify Functions
+     * (suppresses "No compiled .wasm binary found" notice).
+     */
+    required?: boolean;
+    wasmPath?: string;
+  };
+
+  /**
+   * AI Review Evaluator settings
+   */
+  ai?: {
+    enabled?: boolean;
+    apiKey?: string;
+    endpoint?: string;
+    model?: string;
+  };
+}
+
 export interface Finding {
   id: string;
   category: 'COMPLIANCE' | 'DEPRECATION' | 'WASM_PERFORMANCE' | 'BFS_CANARY' | 'PRIVILEGE_LEAST' | 'APP_STORE_REVIEW';
