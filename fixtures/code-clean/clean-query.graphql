@@ -1,0 +1,15 @@
+query GetShopifyDiscounts {
+  discountNodes(first: 25) {
+    nodes {
+      id
+      discount {
+        ... on DiscountAutomaticApp {
+          status
+          appDiscountType {
+            functionId
+          }
+        }
+      }
+    }
+  }
+}

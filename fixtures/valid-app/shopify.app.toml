@@ -1,0 +1,18 @@
+client_id = "test-client-id"
+name = "ValidCompliantApp"
+handle = "valid-compliant-app"
+application_url = "https://app.example.com"
+embedded = true
+
+[access_scopes]
+scopes = "write_discounts,read_discounts"
+
+[auth]
+redirect_urls = [
+  "https://app.example.com/auth/callback"
+]
+
+[webhooks.privacy_compliance]
+customer_deletion_url = "https://app.example.com/webhooks"
+customer_data_request_url = "https://app.example.com/webhooks"
+shop_deletion_url = "https://app.example.com/webhooks"

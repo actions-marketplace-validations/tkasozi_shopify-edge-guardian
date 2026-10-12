@@ -1,0 +1,11 @@
+client_id = "test-invalid-id"
+name = "InvalidApp"
+handle = "invalid-app"
+application_url = "https://invalid.example.com"
+embedded = false
+
+[access_scopes]
+# Bloated scopes
+scopes = "read_products,write_orders,read_all_orders"
+
+# Missing [webhooks.privacy_compliance] entirely

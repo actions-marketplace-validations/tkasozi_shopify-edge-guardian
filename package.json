@@ -1,0 +1,42 @@
+{
+  "name": "shopify-edge-guardian",
+  "version": "1.0.0",
+  "description": "Continuous PR Gatekeeper & Production Canary for Shopify App Store Compliance, Built for Shopify (BFS) Defense, and Rust Wasm Edge Functions",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "shopify-edge-guardian": "dist/cli/index.js",
+    "edge-guardian": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "tsx src/cli/index.ts check"
+  },
+  "keywords": [
+    "shopify",
+    "shopify-functions",
+    "built-for-shopify",
+    "webassembly",
+    "compliance",
+    "gatekeeper",
+    "ci-cd"
+  ],
+  "author": "Shopify Edge Guardian Authors",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "action.yml",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

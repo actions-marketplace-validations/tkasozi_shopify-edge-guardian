@@ -1,0 +1,26 @@
+name: 'Shopify Edge Guardian'
+description: 'Continuous PR Gatekeeper for Shopify App Store Compliance, Built for Shopify (BFS) Defense, and Rust Wasm Performance'
+author: 'Shopify Edge Guardian'
+branding:
+  icon: 'shield'
+  color: 'green'
+
+inputs:
+  path:
+    description: 'Path to Shopify App project root (where shopify.app.toml resides)'
+    required: false
+    default: '.'
+  fail-on-warning:
+    description: 'Fail the check if warnings (e.g. deprecations or unoptimized LTO) are found'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run Shopify Edge Guardian
+      shell: bash
+      run: |
+        npx shopify-edge-guardian check "${{ inputs.path }}" \
+          ${{ inputs.fail-on-warning == 'true' && '--fail-on-warning' || '' }} \
+          --output "$GITHUB_STEP_SUMMARY"
