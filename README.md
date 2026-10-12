@@ -62,6 +62,32 @@ npx shopify-edge-guardian check --ai
 
 # Pass a custom configuration file path
 npx shopify-edge-guardian check --config ./custom-guardian.json
+
+# Activate a Pro or Agency Fleet license key
+npx shopify-edge-guardian activate eg_live_...
+
+# Inspect current license status and active entitlements
+npx shopify-edge-guardian status
+
+# Generate official Shopify App Store Submission Dossier
+npx shopify-edge-guardian certify
+```
+
+### 💰  Editions & Licensing
+
+| Feature Capability | Community (Free) | Pro ($39/mo) | Agency Fleet ($149/mo) |
+| :--- | :---: | :---: | :---: |
+| **GDPR Webhooks & App Bridge Checks** | ✅ | ✅ | ✅ |
+| **Principle of Least Privilege Scope Linter** | ✅ | ✅ | ✅ |
+| **Brand Misuse & Prohibited API Scanning** | ✅ | ✅ | ✅ |
+| **Quarterly GraphQL & REST Deprecation Scanner** | ✅ | ✅ | ✅ |
+| **Rust Wasm 256 KB & 5.0ms Edge Simulation** | ✅ | ✅ | ✅ |
+| **Pluggable AI Semantic Listing Copilot** | 🔒 | ✅ | ✅ |
+| **Official Shopify App Store Certification Dossier** | 🔒 | ✅ | ✅ |
+| **Multi-App Centralized Fleet Monitoring** | 🔒 | 🔒 | ✅ |
+| **Real-time Slack / Discord Deprecation Alerts** | 🔒 | 🔒 | ✅ |
+
+Get a license key on the [GitHub Marketplace](https://github.com/marketplace/actions/shopify-edge-guardian). Set it as a secret `GUARDIAN_LICENSE_KEY` in GitHub Actions or pass `license: ${{ secrets.GUARDIAN_LICENSE_KEY }}`.
 ```
 
 ### Project Configuration (`.edgeguardianrc.json` or `shopify.app.toml`)

@@ -13,6 +13,18 @@ export class MarkdownReporter {
     let md = `## ${statusEmoji}  ${statusTitle}\n\n`;
     md += `*Audited at: ${report.timestamp} | Errors: **${report.totalErrors}** | Warnings: **${report.totalWarnings}***\n\n`;
 
+    // License Tier & Upgrade CTA
+    if (report.license) {
+      if (report.license.tier === 'PRO') {
+        md += `> 🛡️  **Tier:** **Edge Guardian Pro** — Verified License Active (AI Review & Edge Profiler Enabled)\n\n`;
+      } else if (report.license.tier === 'AGENCY_FLEET') {
+        md += `> 🏢  **Tier:** **Edge Guardian Agency Fleet** — Centralized Multi-App Telemetry & Monitoring Active\n\n`;
+      } else {
+        md += `> 💡  **Community Edition** — Basic compliance & deprecation checks.\n`;
+        md += `> 🚀  **Upgrade to Pro or Agency:** Unlock AI semantic listing analysis, Wasm edge runtime simulation, and Multi-App Fleet Dashboard: [Get License Key](https://github.com/marketplace/actions/shopify-edge-guardian).\n\n`;
+      }
+    }
+
     // 1. Compliance Summary Table
     md += `### 1. App Store & GDPR Compliance\n`;
     md += `- **GDPR \`customers/data_request\`:** ${report.compliance.hasGdprCustomersDataRequest ? '✅  Found' : '❌  Missing'}\n`;

@@ -8,6 +8,7 @@ import { FleetManager } from './fleet/fleet-manager.js';
 import { MarkdownReporter } from './reporter/markdown-reporter.js';
 import { EdgeGuardianConfig, GuardianReport } from './types/index.js';
 import { ConfigLoader } from './config/config-loader.js';
+import { LicenseManager } from './licensing/license-manager.js';
 
 export * from './types/index.js';
 export * from './rules/shopify-rules.js';
@@ -20,6 +21,7 @@ export { ReviewAnalyzer, PluggableAiEvaluator, AiEvaluatorConfig } from './analy
 export { FleetManager } from './fleet/fleet-manager.js';
 export { MarkdownReporter } from './reporter/markdown-reporter.js';
 export { ConfigLoader, CONFIG_FILE_CANDIDATES } from './config/config-loader.js';
+export { LicenseManager } from './licensing/license-manager.js';
 
 export class ShopifyEdgeGuardian {
   private complianceAnalyzer = new ComplianceAnalyzer();
@@ -39,9 +41,10 @@ export class ShopifyEdgeGuardian {
    */
   public runAudit(
     projectRoot: string,
-    options?: { config?: EdgeGuardianConfig; configPath?: string }
+    options?: { config?: EdgeGuardianConfig; configPath?: string; licenseKey?: string }
   ): GuardianReport {
     const config = options?.config || ConfigLoader.loadConfig(projectRoot, options?.configPath);
+    const license = LicenseManager.verifyLicenseSync(options?.licenseKey || config.licenseKey);
 
     const compliance = this.complianceAnalyzer.analyze(projectRoot, config);
     const privilegeUsage = this.privilegeAnalyzer.analyze(projectRoot, compliance.scopesRequested, config);
@@ -75,6 +78,7 @@ export class ShopifyEdgeGuardian {
       reviewRequirements,
       deprecation,
       wasmProfile,
+      license,
     };
 
     const summaryMarkdown = this.reporter.generate({
@@ -98,9 +102,11 @@ export class ShopifyEdgeGuardian {
       aiConfig?: AiEvaluatorConfig;
       config?: EdgeGuardianConfig;
       configPath?: string;
+      licenseKey?: string;
     }
   ): Promise<GuardianReport> {
     const config = options?.config || ConfigLoader.loadConfig(projectRoot, options?.configPath);
+    const license = await LicenseManager.verifyLicense({ licenseKey: options?.licenseKey || config.licenseKey });
 
     const compliance = this.complianceAnalyzer.analyze(projectRoot, config);
     const privilegeUsage = this.privilegeAnalyzer.analyze(projectRoot, compliance.scopesRequested, config);
@@ -137,6 +143,7 @@ export class ShopifyEdgeGuardian {
       reviewRequirements,
       deprecation,
       wasmProfile,
+      license,
     };
 
     const summaryMarkdown = this.reporter.generate({

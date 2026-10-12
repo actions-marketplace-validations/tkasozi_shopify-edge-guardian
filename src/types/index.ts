@@ -2,7 +2,32 @@ export type Severity = 'ERROR' | 'WARNING' | 'INFO';
 
 export type RuleOverride = 'off' | 'warning' | 'error' | 'info';
 
+export type LicenseTier = 'COMMUNITY' | 'PRO' | 'AGENCY_FLEET';
+
+export interface LicenseStatus {
+  tier: LicenseTier;
+  valid: boolean;
+  licenseKey?: string;
+  customerEmail?: string;
+  expiresAt?: string;
+  features: {
+    coreLinters: boolean;
+    aiSemanticReview: boolean;
+    wasmEdgeProfiler: boolean;
+    fleetDashboardSync: boolean;
+    autoRemediation: boolean;
+    officialCertification: boolean;
+  };
+  warning?: string;
+}
+
 export interface EdgeGuardianConfig {
+  /**
+   * Edge Guardian License Key for Pro / Agency Fleet tiers.
+   * Can also be set via GUARDIAN_LICENSE_KEY environment variable.
+   */
+  licenseKey?: string;
+
   /**
    * File paths or glob patterns to ignore across all scans.
    * e.g. ["RELEASE_NOTES.md", "docs/**", "tests/**"]
@@ -135,6 +160,7 @@ export interface GuardianReport {
   deprecation: DeprecationResult;
   wasmProfile?: WasmProfileResult;
   bfsCanary?: BfsCanaryResult;
+  license?: LicenseStatus;
   summaryMarkdown: string;
 }
 

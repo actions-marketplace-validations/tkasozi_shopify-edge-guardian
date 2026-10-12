@@ -14,6 +14,10 @@ inputs:
     description: 'Fail the check if warnings (e.g. deprecations or unoptimized LTO) are found'
     required: false
     default: 'false'
+  license:
+    description: 'Edge Guardian Pro or Agency Fleet License Key'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -23,4 +27,5 @@ runs:
       run: |
         npx shopify-edge-guardian check "${{ inputs.path }}" \
           ${{ inputs.fail-on-warning == 'true' && '--fail-on-warning' || '' }} \
+          ${{ inputs.license != '' && format('--license "{0}"', inputs.license) || '' }} \
           --output "$GITHUB_STEP_SUMMARY"
