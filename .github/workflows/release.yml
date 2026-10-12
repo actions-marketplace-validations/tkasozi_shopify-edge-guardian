@@ -68,11 +68,11 @@ jobs:
       - name: Build Package
         run: npm run build
 
-      - name: Publish to npm (Provenance Enabled)
+      - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          npm publish --provenance --access public
+          npm publish --access public
 
   release-marketplace:
     name: GitHub Marketplace & Tag Release
