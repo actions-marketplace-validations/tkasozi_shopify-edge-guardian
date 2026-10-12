@@ -86,5 +86,6 @@ describe('MarkdownReporter (Actionable Violation Formatting)', () => {
     expect(output).toContain('```typescript');
     expect(output).toContain('42 | const items = order.fulfillmentOrder.lineItems;');
     expect(output).toContain('<code>const items = order.fulfillmentOrder.lineItems;</code>');
+    expect(output).toContain('https://github.com/marketplace/actions/shopify-edge-guardian');
   });
 });

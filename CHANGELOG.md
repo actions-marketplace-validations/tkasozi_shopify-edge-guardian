@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.3] - 2026-10-12
+
+### Fixed
+- **Markdown Report Footer Link:**
+  - Updated report footer link to point directly to the official GitHub Marketplace action URL (`https://github.com/marketplace/actions/shopify-edge-guardian`).
+
+---
+
 ## [1.0.2] - 2026-10-12
 
 ### Added
