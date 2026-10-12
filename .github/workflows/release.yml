@@ -71,12 +71,24 @@ jobs:
       - name: Publish to npm (Provenance Enabled)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
         run: |
           CURRENT_VERSION=$(node -p "require('./package.json').version")
           if npm view "shopify-edge-guardian@$CURRENT_VERSION" version > /dev/null 2>&1; then
             echo "::notice ::shopify-edge-guardian@$CURRENT_VERSION is already published on npm. Skipping publication."
           else
-            npm publish --provenance --access public
+            echo "Publishing to npm with provenance..."
+            OUTPUT=$(npm publish --provenance --access public 2>&1) && echo "$OUTPUT" || {
+              EXIT_CODE=$?
+              echo "$OUTPUT"
+              if echo "$OUTPUT" | grep -q "npm stage publish"; then
+                echo "::notice ::Stage-only token detected (E_STAGE_REQUIRED). Submitting package via npm stage publish..."
+                npm stage publish --provenance --access public || npm stage publish
+                echo "::notice ::Package successfully staged on npm! Maintainer can approve via 'npm stage approve' or the npm web dashboard."
+              else
+                exit $EXIT_CODE
+              fi
+            }
           fi
 
   release-marketplace:

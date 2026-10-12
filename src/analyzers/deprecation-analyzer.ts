@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { DeprecationItem, DeprecationResult, Finding } from '../types/index.js';
 import { KNOWN_DEPRECATIONS } from '../rules/shopify-rules.js';
+import { isIgnoredFile, maskComments } from '../utils/sanitizer.js';
 
 export class DeprecationAnalyzer {
   /**
@@ -22,15 +23,20 @@ export class DeprecationAnalyzer {
         continue; // Skip unreadable files
       }
 
+      // Mask comments in searchable content to prevent false positives from comments
+      const searchableContent = maskComments(content, file);
+
       for (const deprecation of KNOWN_DEPRECATIONS) {
         // Create an isolated local regex with global matching to find all matches in this file
         const flags = deprecation.pattern.flags.replace('g', '') + 'g';
         const regex = new RegExp(deprecation.pattern.source, flags);
         let match: RegExpExecArray | null;
 
-        while ((match = regex.exec(content)) !== null) {
-          const prefix = content.slice(0, match.index);
+        while ((match = regex.exec(searchableContent)) !== null) {
+          const prefix = searchableContent.slice(0, match.index);
           const lineNumber = prefix.split('\n').length;
+          const lines = content.split('\n');
+          const lineContent = lines[lineNumber - 1]?.trimEnd() || '';
 
           const item: DeprecationItem = {
             fieldOrEndpoint: deprecation.fieldOrEndpoint,
@@ -40,6 +46,8 @@ export class DeprecationAnalyzer {
             replacement: deprecation.replacement,
             file: path.relative(dirPath, file),
             line: lineNumber,
+            lineContent,
+            matchedPhrase: match[0],
           };
 
           items.push(item);
@@ -52,6 +60,8 @@ export class DeprecationAnalyzer {
             message: `${deprecation.reason} (Sunset: ${deprecation.sunsetDate})`,
             file: item.file,
             line: item.line,
+            matchedPhrase: match[0],
+            lineContent,
             remediation: deprecation.replacement,
           });
 
@@ -110,6 +120,9 @@ export class DeprecationAnalyzer {
         }
         this.collectSourceFiles(fullPath, fileList);
       } else if (entry.isFile()) {
+        if (isIgnoredFile(fullPath)) {
+          continue;
+        }
         const ext = path.extname(entry.name).toLowerCase();
         if (['.ts', '.tsx', '.js', '.jsx', '.graphql', '.gql'].includes(ext)) {
           fileList.push(fullPath);

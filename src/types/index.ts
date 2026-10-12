@@ -8,6 +8,10 @@ export interface Finding {
   message: string;
   file?: string;
   line?: number;
+  column?: number;
+  matchedPhrase?: string;
+  lineContent?: string;
+  snippet?: string;
   remediation?: string;
 }
 
@@ -48,6 +52,8 @@ export interface DeprecationItem {
   replacement?: string;
   file: string;
   line: number;
+  lineContent?: string;
+  matchedPhrase?: string;
 }
 
 export interface DeprecationResult {

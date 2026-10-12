@@ -156,4 +156,52 @@ describe('ReviewAnalyzer (Shopify App Store Review Blockers)', () => {
     expect(resultNoAi.passed).toBe(true);
     expect(resultNoAi.findings).toHaveLength(0);
   });
+
+  it('never flags false positives inside comments (.toml, .ts, .md) or lockfiles', () => {
+    const dirComments = path.join(testRoot, 'comments-and-lockfile-app');
+    fs.mkdirSync(dirComments, { recursive: true });
+
+    // .toml with commented-out brand misuse and superlatives
+    fs.writeFileSync(
+      path.join(dirComments, 'shopify.app.toml'),
+      `# name = "Shopify Pro Cart"\n# #1 rated in the world\nname = "Pro Cart for Shopify"\nembedded = true\n`
+    );
+
+    // Lockfiles that must be completely ignored
+    fs.writeFileSync(
+      path.join(dirComments, 'package-lock.json'),
+      `{ "name": "shopify-edge-guardian", "description": "the best and #1 fastest app" }`
+    );
+    fs.writeFileSync(
+      path.join(dirComments, 'yarn.lock'),
+      `# yarn lockfile v1\nshopify-bad-package:\n  version "1.0.0"\n`
+    );
+
+    // Source code with superlatives, secrets, and theme overwrites inside comments only
+    fs.writeFileSync(
+      path.join(dirComments, 'script.ts'),
+      `// The best and #1 app in the world
+       // const token = "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";
+       /*
+        * const endpoint = "/admin/api/2024-10/assets.json?asset[key]=layout/theme.liquid";
+        * fastest checkout in existence
+        */
+       export const calculateDiscount = (total: number) => total * 0.9;
+      `
+    );
+
+    // Markdown with HTML comment
+    fs.writeFileSync(
+      path.join(dirComments, 'README.md'),
+      `# Pro Cart\n<!-- The #1 fastest cart in Shopify ecosystem -->\nClean description of app.`
+    );
+
+    const result = analyzer.analyze(dirComments);
+
+    expect(result.passed).toBe(true);
+    expect(result.brandMisuseFound).toBe(false);
+    expect(result.exaggeratedLanguageFound).toBe(false);
+    expect(result.insecurePatternsFound).toBe(false);
+    expect(result.findings).toHaveLength(0);
+  });
 });

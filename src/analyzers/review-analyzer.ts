@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Finding, ReviewRequirementsResult } from '../types/index.js';
 import { APP_STORE_REVIEW_RULES, NON_SUPERLATIVE_EST_WORDS } from '../rules/shopify-rules.js';
+import { isIgnoredFile, maskComments } from '../utils/sanitizer.js';
 
 export class ReviewAnalyzer {
   /**
@@ -24,7 +25,8 @@ export class ReviewAnalyzer {
     if (fs.existsSync(configPath)) {
       try {
         const configContent = fs.readFileSync(configPath, 'utf-8');
-        const nameMatch = /^\s*name\s*=\s*["']([^"']+)["']/m.exec(configContent);
+        const cleanConfig = maskComments(configContent, configPath);
+        const nameMatch = /^\s*name\s*=\s*["']([^"']+)["']/m.exec(cleanConfig);
 
         if (nameMatch) {
           const appName = nameMatch[1].trim();
@@ -36,6 +38,12 @@ export class ReviewAnalyzer {
 
           if (startsWithShopify || hasShopifyWithoutFor) {
             brandMisuseFound = true;
+            const configLines = configContent.split('\n');
+            const cleanLines = cleanConfig.split('\n');
+            const nameLineIndex = cleanLines.findIndex((l) => /^\s*name\s*=/i.test(l));
+            const lineNumber = nameLineIndex !== -1 ? nameLineIndex + 1 : 1;
+            const lineContent = nameLineIndex !== -1 ? configLines[nameLineIndex].trimEnd() : undefined;
+
             findings.push({
               id: 'APP_NAME_BRAND_MISUSE',
               category: 'APP_STORE_REVIEW',
@@ -43,6 +51,9 @@ export class ReviewAnalyzer {
               title: `Shopify Trademark Misuse in App Name: "${appName}"`,
               message: `App name "${appName}" violates Shopify Brand Guidelines (Section 4.1.2). Apps cannot lead with "Shopify" or include Shopify trademarks unless formatted with the "for Shopify" suffix (e.g. "Edge Orders for Shopify").`,
               file: configPath,
+              line: lineNumber,
+              matchedPhrase: appName,
+              lineContent,
               remediation: `Rename app to "${appName.replace(/^shopify\s+/i, '')} for Shopify" in shopify.app.toml and Partner Dashboard.`,
             });
           }
@@ -67,6 +78,9 @@ export class ReviewAnalyzer {
       const ext = path.extname(file).toLowerCase();
       const isMarketingOrConfig = ['.toml', '.md', '.txt', '.json', '.html'].includes(ext);
 
+      // Mask comments in searchable content to prevent false positives in comments
+      const searchableContent = maskComments(content, file);
+
       // (A) Rule-based matching
       for (const rule of APP_STORE_REVIEW_RULES) {
         // Exaggerated language and brand misuse are strictly evaluated on marketing/config files
@@ -80,9 +94,11 @@ export class ReviewAnalyzer {
         const regex = new RegExp(rule.pattern.source, flags);
         let match: RegExpExecArray | null;
 
-        while ((match = regex.exec(content)) !== null) {
-          const prefix = content.slice(0, match.index);
+        while ((match = regex.exec(searchableContent)) !== null) {
+          const prefix = searchableContent.slice(0, match.index);
           const lineNumber = prefix.split('\n').length;
+          const lines = content.split('\n');
+          const lineContent = lines[lineNumber - 1]?.trimEnd() || '';
 
           if (rule.category === 'EXAGGERATED_LANGUAGE') {
             exaggeratedLanguageFound = true;
@@ -100,6 +116,8 @@ export class ReviewAnalyzer {
             message: `${rule.message} (Matched: "${match[0]}")`,
             file: relPath,
             line: lineNumber,
+            matchedPhrase: match[0],
+            lineContent,
             remediation: rule.remediation,
           });
 
@@ -110,14 +128,16 @@ export class ReviewAnalyzer {
 
       // (B) Morphological NLP scan for superlative -est inflections in marketing files
       if (isMarketingOrConfig) {
-        const estMatches = content.match(/\b([a-zA-Z]{4,}est)\b/g);
+        const estMatches = searchableContent.match(/\b([a-zA-Z]{4,}est)\b/g);
         if (estMatches) {
           for (const rawWord of estMatches) {
             const word = rawWord.toLowerCase();
             if (!NON_SUPERLATIVE_EST_WORDS.has(word)) {
               exaggeratedLanguageFound = true;
-              const idx = content.indexOf(rawWord);
-              const lineNumber = idx !== -1 ? content.slice(0, idx).split('\n').length : 1;
+              const idx = searchableContent.indexOf(rawWord);
+              const lineNumber = idx !== -1 ? searchableContent.slice(0, idx).split('\n').length : 1;
+              const lines = content.split('\n');
+              const lineContent = lines[lineNumber - 1]?.trimEnd() || '';
 
               findings.push({
                 id: `SUPERLATIVE_MORPHOLOGICAL_${word.toUpperCase()}`,
@@ -127,6 +147,8 @@ export class ReviewAnalyzer {
                 message: `The superlative claim "${rawWord}" in listing copy violates Shopify App Store guidelines (Section 4.3.3) prohibiting non-verifiable comparative claims.`,
                 file: relPath,
                 line: lineNumber,
+                matchedPhrase: rawWord,
+                lineContent,
                 remediation: `Replace "${rawWord}" with an objective description of your app speed or capability.`,
               });
               break;
@@ -203,6 +225,9 @@ export class ReviewAnalyzer {
         }
         this.collectFilesToScan(fullPath, fileList);
       } else if (entry.isFile()) {
+        if (isIgnoredFile(fullPath)) {
+          continue;
+        }
         const ext = path.extname(entry.name).toLowerCase();
         // Check configs, markdown, listings, and code
         if (['.toml', '.md', '.txt', '.json', '.ts', '.tsx', '.js', '.jsx', '.liquid'].includes(ext)) {
@@ -270,15 +295,29 @@ export class PluggableAiEvaluator {
         remediation: v.remediation || 'Replace with factual, verifiable feature description.',
       }));
 
-      const findings: Finding[] = claims.map((c, idx) => ({
-        id: `AI_SUPERLATIVE_CLAIM_${idx + 1}`,
-        category: 'APP_STORE_REVIEW',
-        severity: c.severity,
-        title: `AI Detected Superlative / Exaggerated Claim: "${c.phrase}"`,
-        message: `${c.reason} (Shopify Guidelines Section 4.3.3 / 4.3.4)`,
-        file,
-        remediation: c.remediation,
-      }));
+      const lines = text.split('\n');
+      const findings: Finding[] = claims.map((c, idx) => {
+        let lineNum: number | undefined;
+        let lineContent: string | undefined;
+        const phraseIdx = text.toLowerCase().indexOf(c.phrase.toLowerCase());
+        if (phraseIdx !== -1) {
+          lineNum = text.slice(0, phraseIdx).split('\n').length;
+          lineContent = lines[lineNum - 1]?.trimEnd();
+        }
+
+        return {
+          id: `AI_SUPERLATIVE_CLAIM_${idx + 1}`,
+          category: 'APP_STORE_REVIEW',
+          severity: c.severity,
+          title: `AI Detected Superlative / Exaggerated Claim: "${c.phrase}"`,
+          message: `${c.reason} (Shopify Guidelines Section 4.3.3 / 4.3.4)`,
+          file,
+          line: lineNum,
+          matchedPhrase: c.phrase,
+          lineContent,
+          remediation: c.remediation,
+        };
+      });
 
       return { claims, findings };
     }
@@ -352,15 +391,29 @@ Respond ONLY with valid JSON matching:
         remediation: v.remediation || 'Replace with factual, verifiable feature description.',
       }));
 
-      const findings: Finding[] = claims.map((c: any, idx: number) => ({
-        id: `AI_SUPERLATIVE_CLAIM_${idx + 1}`,
-        category: 'APP_STORE_REVIEW',
-        severity: c.severity,
-        title: `AI Detected Superlative / Exaggerated Claim: "${c.phrase}"`,
-        message: `${c.reason} (Shopify Guidelines Section 4.3.3 / 4.3.4)`,
-        file,
-        remediation: c.remediation,
-      }));
+      const lines = text.split('\n');
+      const findings: Finding[] = claims.map((c: any, idx: number) => {
+        let lineNum: number | undefined;
+        let lineContent: string | undefined;
+        const phraseIdx = text.toLowerCase().indexOf(c.phrase.toLowerCase());
+        if (phraseIdx !== -1) {
+          lineNum = text.slice(0, phraseIdx).split('\n').length;
+          lineContent = lines[lineNum - 1]?.trimEnd();
+        }
+
+        return {
+          id: `AI_SUPERLATIVE_CLAIM_${idx + 1}`,
+          category: 'APP_STORE_REVIEW',
+          severity: c.severity,
+          title: `AI Detected Superlative / Exaggerated Claim: "${c.phrase}"`,
+          message: `${c.reason} (Shopify Guidelines Section 4.3.3 / 4.3.4)`,
+          file,
+          line: lineNum,
+          matchedPhrase: c.phrase,
+          lineContent,
+          remediation: c.remediation,
+        };
+      });
 
       return { claims, findings };
     } catch (err: any) {

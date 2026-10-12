@@ -27,7 +27,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/tkasozi/shopify-edge-guardian"
+    "url": "git+https://github.com/tkasozi/shopify-edge-guardian.git"
   },
   "homepage": "https://github.com/tkasozi/shopify-edge-guardian#readme",
   "bugs": {

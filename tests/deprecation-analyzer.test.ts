@@ -84,4 +84,32 @@ const q3 = "privateMetafields";
     expect(finding?.severity).toBe('WARNING');
     expect(finding?.message).toContain(header);
   });
+
+  it('never flags deprecated endpoints or GraphQL fields mentioned inside comments', () => {
+    const commentsDir = path.join(fixturesDir, 'temp-deprecation-comments');
+    if (!fs.existsSync(commentsDir)) {
+      fs.mkdirSync(commentsDir, { recursive: true });
+    }
+
+    try {
+      fs.writeFileSync(
+        path.join(commentsDir, 'service.ts'),
+        `// Old legacy note: formerly called fulfillmentOrder.lineItems
+         /*
+          * Note: privateMetafields was replaced with metafields
+          */
+         export const getStatus = () => "active";`
+      );
+
+      const result = analyzer.scanDirectory(commentsDir);
+
+      expect(result.passed).toBe(true);
+      expect(result.deprecatedItemsCount).toBe(0);
+      expect(result.findings).toHaveLength(0);
+    } finally {
+      if (fs.existsSync(commentsDir)) {
+        fs.rmSync(commentsDir, { recursive: true, force: true });
+      }
+    }
+  });
 });

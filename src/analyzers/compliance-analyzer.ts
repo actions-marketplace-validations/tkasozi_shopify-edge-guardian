@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ComplianceResult, Finding } from '../types/index.js';
 import { MANDATORY_GDPR_WEBHOOKS, SUSPICIOUS_HIGH_RISK_SCOPES } from '../rules/shopify-rules.js';
+import { maskComments } from '../utils/sanitizer.js';
 
 export class ComplianceAnalyzer {
   /**
@@ -45,14 +46,10 @@ export class ComplianceAnalyzer {
 
     configContent = fs.readFileSync(configFilePath, 'utf-8');
 
-    // Strip comments to prevent commented-out lines from bypassing or triggering checks
-    const sanitizedContent = configContent
-      .split('\n')
-      .map((line) => {
-        const commentIndex = line.indexOf('#');
-        return commentIndex !== -1 ? line.slice(0, commentIndex) : line;
-      })
-      .join('\n');
+    // Mask comments so commented-out lines never bypass or trigger false positive checks
+    const sanitizedContent = maskComments(configContent, configFilePath);
+    const cleanLines = sanitizedContent.split('\n');
+    const configLines = configContent.split('\n');
 
     // 1. Check GDPR Privacy Compliance Webhooks
     const hasCustomersDataRequest =
@@ -106,6 +103,10 @@ export class ComplianceAnalyzer {
     const isEmbedded = embeddedMatch ? embeddedMatch[1].toLowerCase() === 'true' : false;
 
     if (!isEmbedded) {
+      const embeddedLineIdx = cleanLines.findIndex((l) => /^\s*embedded\s*=/i.test(l));
+      const embeddedLine = embeddedLineIdx !== -1 ? embeddedLineIdx + 1 : undefined;
+      const embeddedLineContent = embeddedLineIdx !== -1 ? configLines[embeddedLineIdx].trimEnd() : undefined;
+
       findings.push({
         id: 'APP_NOT_EMBEDDED',
         category: 'COMPLIANCE',
@@ -113,6 +114,9 @@ export class ComplianceAnalyzer {
         title: 'App Not Embedded in Shopify Admin',
         message: 'The "Built for Shopify" badge requires apps to be embedded via Shopify App Bridge.',
         file: configFilePath,
+        line: embeddedLine,
+        matchedPhrase: embeddedMatch ? embeddedMatch[0].trim() : undefined,
+        lineContent: embeddedLineContent,
         remediation: 'Set `embedded = true` in shopify.app.toml and configure App Bridge 3.x.',
       });
     }
@@ -138,6 +142,10 @@ export class ComplianceAnalyzer {
     for (const scope of rawScopes) {
       if (SUSPICIOUS_HIGH_RISK_SCOPES.includes(scope)) {
         unnecessaryScopes.push(scope);
+        const scopeLineIdx = cleanLines.findIndex((l) => l.includes(scope));
+        const scopeLine = scopeLineIdx !== -1 ? scopeLineIdx + 1 : undefined;
+        const scopeLineContent = scopeLineIdx !== -1 ? configLines[scopeLineIdx].trimEnd() : undefined;
+
         findings.push({
           id: `SCOPE_BLOAT_${scope.toUpperCase()}`,
           category: 'COMPLIANCE',
@@ -145,6 +153,9 @@ export class ComplianceAnalyzer {
           title: `Potential Scope Bloat: ${scope}`,
           message: `Requesting elevated scope '${scope}' increases App Store review scrutiny and violates the Principle of Least Privilege.`,
           file: configFilePath,
+          line: scopeLine,
+          matchedPhrase: scope,
+          lineContent: scopeLineContent,
           remediation: `Audit if '${scope}' is strictly necessary. Remove if client-side or scoped metafields suffice.`,
         });
       }

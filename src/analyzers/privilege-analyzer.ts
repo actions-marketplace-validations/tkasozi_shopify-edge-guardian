@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Finding, PrivilegeUsageResult } from '../types/index.js';
 import { SCOPE_USAGE_MAP, SUSPICIOUS_HIGH_RISK_SCOPES } from '../rules/shopify-rules.js';
+import { isIgnoredFile, maskComments } from '../utils/sanitizer.js';
 
 export class PrivilegeAnalyzer {
   /**
@@ -32,8 +33,10 @@ export class PrivilegeAnalyzer {
 
     for (const file of sourceFiles) {
       try {
-        const content = fs.readFileSync(file, 'utf-8');
-        fileContents.push({ path: path.relative(projectRoot, file), content });
+        const rawContent = fs.readFileSync(file, 'utf-8');
+        // Mask comments so comments in code never count as real API usage
+        const cleanContent = maskComments(rawContent, file);
+        fileContents.push({ path: path.relative(projectRoot, file), content: cleanContent });
       } catch {
         // Skip unreadable files
       }
@@ -68,14 +71,23 @@ export class PrivilegeAnalyzer {
       let readDetected = false;
       let writeDetected = false;
       let matchedFile = '';
+      let matchedLine: number | undefined;
+      let matchedLineContent: string | undefined;
+      let matchedPhrase: string | undefined;
 
       for (const { path: relPath, content } of fileContents) {
         // Check read patterns
         if (!readDetected) {
           for (const pattern of patternConfig.readPatterns) {
-            if (pattern.test(content)) {
+            const m = pattern.exec(content);
+            if (m) {
               readDetected = true;
               matchedFile = relPath;
+              const idx = m.index;
+              matchedLine = content.slice(0, idx).split('\n').length;
+              const lines = content.split('\n');
+              matchedLineContent = lines[matchedLine - 1]?.trimEnd();
+              matchedPhrase = m[0];
               break;
             }
           }
@@ -103,12 +115,35 @@ export class PrivilegeAnalyzer {
         unusedScopes.push(scope);
         const isHighRisk = SUSPICIOUS_HIGH_RISK_SCOPES.includes(scope);
 
+        const configPath = path.join(projectRoot, 'shopify.app.toml');
+        let configLine: number | undefined;
+        let configLineContent: string | undefined;
+        if (fs.existsSync(configPath)) {
+          try {
+            const rawConfig = fs.readFileSync(configPath, 'utf-8');
+            const cleanConfig = maskComments(rawConfig, configPath);
+            const cleanLines = cleanConfig.split('\n');
+            const originalLines = rawConfig.split('\n');
+            const idx = cleanLines.findIndex((l) => l.includes(scope));
+            if (idx !== -1) {
+              configLine = idx + 1;
+              configLineContent = originalLines[idx].trimEnd();
+            }
+          } catch {
+            // Ignore read errors
+          }
+        }
+
         findings.push({
           id: `UNUSED_PRIVILEGE_${scope.toUpperCase()}`,
           category: 'PRIVILEGE_LEAST',
           severity: isHighRisk ? 'ERROR' : 'WARNING',
           title: `Unused Elevated Privilege: '${scope}'`,
           message: `The scope '${scope}' is declared in shopify.app.toml, but zero corresponding API queries, mutations, or endpoints were detected in source files. Shopify requires strict Principle of Least Privilege (Requirement 3.2) and will reject apps requesting unused scopes.`,
+          file: 'shopify.app.toml',
+          line: configLine,
+          matchedPhrase: scope,
+          lineContent: configLineContent,
           remediation: `Remove '${scope}' from shopify.app.toml or implement the required ${patternConfig.resource} operations.`,
         });
       } else {
@@ -123,6 +158,10 @@ export class PrivilegeAnalyzer {
             severity: 'WARNING',
             title: `Potential Over-Privileging: '${scope}' (Only Read Detected)`,
             message: `Scope '${scope}' requests write/mutation access, but only read operations on ${patternConfig.resource} were detected in codebase (e.g. in ${matchedFile}).`,
+            file: matchedFile,
+            line: matchedLine,
+            matchedPhrase: matchedPhrase || scope,
+            lineContent: matchedLineContent,
             remediation: `Downgrade scope to 'read_${resourceKey}' to minimize merchant install friction and reduce App Store review scrutiny.`,
           });
         }
@@ -159,6 +198,9 @@ export class PrivilegeAnalyzer {
         }
         this.collectSourceFiles(fullPath, fileList);
       } else if (entry.isFile()) {
+        if (isIgnoredFile(fullPath)) {
+          continue;
+        }
         const ext = path.extname(entry.name).toLowerCase();
         if (['.ts', '.tsx', '.js', '.jsx', '.graphql', '.gql', '.mjs', '.cjs', '.liquid', '.vue', '.svelte', '.rb', '.py', '.php'].includes(ext)) {
           fileList.push(fullPath);
