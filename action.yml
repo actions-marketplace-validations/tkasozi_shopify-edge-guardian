@@ -30,8 +30,15 @@ runs:
       shell: bash
       env:
         GUARDIAN_API_ENDPOINT: ${{ inputs.api-endpoint }}
-        GUARDIAN_LICENSE_KEY: ${{ inputs.license }}
+        INPUT_LICENSE: ${{ inputs.license }}
       run: |
+        RESOLVED_KEY="${INPUT_LICENSE:-${GUARDIAN_LICENSE_KEY:-${EDGE_GUARDIAN_KEY:-}}}"
+        LICENSE_ARG=""
+        if [ -n "$RESOLVED_KEY" ]; then
+          export GUARDIAN_LICENSE_KEY="$RESOLVED_KEY"
+          LICENSE_ARG="--license $RESOLVED_KEY"
+        fi
+
         if [ -f "$GITHUB_ACTION_PATH/dist/cli/index.js" ]; then
           CLI_EXEC="node $GITHUB_ACTION_PATH/dist/cli/index.js"
         else
@@ -40,5 +47,5 @@ runs:
 
         $CLI_EXEC check "${{ inputs.path }}" \
           ${{ inputs.fail-on-warning == 'true' && '--fail-on-warning' || '' }} \
-          ${{ inputs.license != '' && format('--license "{0}"', inputs.license) || '' }} \
+          $LICENSE_ARG \
           --output "$GITHUB_STEP_SUMMARY"
