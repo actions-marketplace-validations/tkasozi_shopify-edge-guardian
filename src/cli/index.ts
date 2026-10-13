@@ -91,7 +91,7 @@ async function main() {
       console.log(`  • Multi-App Fleet Dashboard Sync: ${status.features.fleetDashboardSync ? '✅' : '🔒 (Agency Fleet)'}`);
       console.log(`  • Official App Store Certification Dossier: ${status.features.officialCertification ? '✅' : '🔒 (Pro / Agency)'}\n`);
       if (!status.valid) {
-        console.log('🚀  To upgrade or get a license key: https://github.com/marketplace/actions/shopify-edge-guardian\n');
+        console.log('🚀  To upgrade or get a license key: https://billing.endptsec.com/checkout/shopify-edge-guardian\n');
       }
       process.exit(0);
     }

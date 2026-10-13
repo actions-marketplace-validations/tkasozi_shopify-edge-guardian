@@ -91,7 +91,7 @@ npx shopify-edge-guardian certify
 
 1. **Get an Edge Guardian License:**
    - **Community Edition:** Free forever on the [GitHub Marketplace](https://github.com/marketplace/actions/shopify-edge-guardian). No key required.
-   - **Pro ($39/mo) & Agency Fleet ($149/mo):** Provisioned automatically via the Endpoint Security Billing Gateway at [`https://billing.endptsec.com`](https://billing.endptsec.com).
+   - **Pro ($39/mo) & Agency Fleet ($149/mo):** Subscribe and activate instantly on the [Endpoint Security Checkout & Pricing Portal](https://billing.endptsec.com/checkout/shopify-edge-guardian).
    - Upon subscription, your active key (e.g. `eg_live_...` or `eg_agency_...`) is delivered instantly to your email.
 
 2. **Add Secret to GitHub:**

@@ -21,7 +21,7 @@ export class MarkdownReporter {
         md += `> 🏢  **Tier:** **Edge Guardian Agency Fleet** — Centralized Multi-App Telemetry & Monitoring Active\n\n`;
       } else {
         md += `> 💡  **Community Edition** — Basic compliance & deprecation checks.\n`;
-        md += `> 🚀  **Upgrade to Pro or Agency:** Unlock AI semantic listing analysis, Wasm edge runtime simulation, and Multi-App Fleet Dashboard: [Get License Key](https://github.com/marketplace/actions/shopify-edge-guardian).\n\n`;
+        md += `> 🚀  **Upgrade to Pro or Agency:** Unlock AI semantic listing analysis, Wasm edge runtime simulation, and Multi-App Fleet Dashboard: [Get License Key](https://billing.endptsec.com/checkout/shopify-edge-guardian).\n\n`;
       }
     }
 
