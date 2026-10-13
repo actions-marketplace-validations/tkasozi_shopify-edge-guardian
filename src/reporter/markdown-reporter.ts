@@ -88,7 +88,14 @@ export class MarkdownReporter {
       const wasmStatus = report.wasmProfile.passed ? '✅  Passed' : '❌  Failed';
       md += `### 5. Rust Wasm Edge Performance Profile\n`;
       md += `- **Binary Size:** \`${report.wasmProfile.sizeFormatted}\` / \`256 KB\` budget (${wasmStatus})\n`;
-      md += `- **Estimated Edge Latency:** \`${report.wasmProfile.estimatedExecutionMs}ms\` / \`5.0ms\` hard cutoff (Target: < 1.5ms)\n`;
+      md += `- **Simulated Edge Latency:** \`${report.wasmProfile.estimatedExecutionMs}ms\` / \`5.0ms\` hard cutoff (Target: < 1.5ms)\n`;
+      if (report.wasmProfile.compileTimeMs !== undefined && report.wasmProfile.executionTimeMs !== undefined) {
+        md += `  • *V8 Compile Time:* \`${report.wasmProfile.compileTimeMs}ms\` | *Instantiation:* \`${report.wasmProfile.instantiationTimeMs}ms\` | *Execution:* \`${report.wasmProfile.executionTimeMs}ms\`\n`;
+      }
+      if (report.wasmProfile.memoryBytes) {
+        const memKb = (report.wasmProfile.memoryBytes / 1024).toFixed(1);
+        md += `- **Sandboxed Memory Footprint:** \`${memKb} KB\` (${report.wasmProfile.memoryPages} pages)\n`;
+      }
       md += `- **Link-Time Optimization (LTO):** ${report.wasmProfile.hasOptimizedLto ? '✅  Optimized' : '⚠️  Unoptimized'}\n\n`;
     }
 

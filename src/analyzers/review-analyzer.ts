@@ -286,6 +286,8 @@ export class ReviewAnalyzer {
 export interface AiEvaluatorConfig {
   apiKey?: string;
   endpoint?: string;
+  cloudEndpoint?: string;
+  licenseKey?: string;
   model?: string;
   timeoutMs?: number;
   enabled?: boolean;
@@ -301,22 +303,25 @@ export interface AiEvaluatorConfig {
 }
 
 export class PluggableAiEvaluator {
+  private defaultCloudEndpoint = 'https://billing.endptsec.com';
   private defaultEndpoint = 'https://api.openai.com/v1/chat/completions';
   private defaultModel = 'gpt-4o-mini';
   private defaultTimeoutMs = 6000;
 
   /**
-   * Checks if an AI provider is configured and available.
+   * Checks if an AI provider or Cloud AI Fulfillment via license key is available.
    */
   public isAvailable(config?: AiEvaluatorConfig): boolean {
     if (config?.mockResponse) return true;
     if (config?.enabled === false) return false;
+    const licenseKey = config?.licenseKey || process.env.GUARDIAN_LICENSE_KEY || process.env.EDGE_GUARDIAN_KEY;
+    if (licenseKey && licenseKey.trim().length > 0) return true;
     const key = config?.apiKey || process.env.GUARDIAN_AI_KEY || process.env.OPENAI_API_KEY;
     return Boolean(key && key.trim().length > 0);
   }
 
   /**
-   * Evaluates text content using an LLM against Shopify App Store Guidelines Section 4.3.3 & 4.3.4.
+   * Evaluates text content using Cloud AI fulfillment or local LLM against Shopify App Store Guidelines.
    */
   public async evaluateText(
     text: string,
@@ -325,6 +330,7 @@ export class PluggableAiEvaluator {
     claims: Array<{ phrase: string; reason: string; severity: 'ERROR' | 'WARNING'; remediation: string }>;
     findings: Finding[];
     error?: string;
+    provider?: string;
   }> {
     const config = options.config;
     const file = options.file;
@@ -369,10 +375,48 @@ export class PluggableAiEvaluator {
       return { claims: [], findings: [] };
     }
 
+    const licenseKey = config?.licenseKey || process.env.GUARDIAN_LICENSE_KEY || process.env.EDGE_GUARDIAN_KEY;
+    const cloudBase = config?.cloudEndpoint || process.env.GUARDIAN_API_ENDPOINT || this.defaultCloudEndpoint;
+    const timeoutMs = config?.timeoutMs || this.defaultTimeoutMs;
+
+    // 1. Cloud AI Fulfillment via Active License Key (Zero merchant setup required)
+    if (licenseKey && licenseKey.trim().length > 0) {
+      try {
+        const response = await fetch(`${cloudBase}/v1/ai/review`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'Shopify-Edge-Guardian-CLI',
+          },
+          body: JSON.stringify({
+            licenseKey: licenseKey.trim(),
+            text,
+            filePath: file,
+          }),
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+
+        if (response.ok) {
+          const data = (await response.json()) as any;
+          return {
+            claims: data.claims || [],
+            findings: data.findings || [],
+            provider: data.provider || 'cloud/edge-guardian-ai',
+          };
+        }
+      } catch {
+        // Fall through to local API key if configured
+      }
+    }
+
+    // 2. Direct LLM fallback if user provides personal API key
     const apiKey = config?.apiKey || process.env.GUARDIAN_AI_KEY || process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return { claims: [], findings: [] };
+    }
+
     const endpoint = config?.endpoint || process.env.GUARDIAN_AI_ENDPOINT || this.defaultEndpoint;
     const model = config?.model || process.env.GUARDIAN_AI_MODEL || this.defaultModel;
-    const timeoutMs = config?.timeoutMs || this.defaultTimeoutMs;
 
     const systemPrompt = `You are a Senior Shopify App Store Review Auditor enforcing Section 4.3.3 (Superlative & Exaggerated Claims) and Section 4.3.4 (Unsubstantiated Guarantees & Exclusivity).
 Analyze the provided app listing copy, markdown description, or text.

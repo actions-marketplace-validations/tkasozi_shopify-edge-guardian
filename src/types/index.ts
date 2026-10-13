@@ -136,6 +136,14 @@ export interface WasmProfileResult {
   executionBudgetMs: number; // Shopify 5ms hard limit
   hasOptimizedLto: boolean;
   findings: Finding[];
+  compileTimeMs?: number;
+  instantiationTimeMs?: number;
+  executionTimeMs?: number;
+  totalLatencyMs?: number;
+  memoryBytes?: number;
+  memoryPages?: number;
+  exportedSymbols?: string[];
+  simulationStatus?: 'SUCCESS' | 'TRAPPED' | 'COMPILED_ONLY' | 'NOT_APPLICABLE';
 }
 
 export interface BfsCanaryResult {

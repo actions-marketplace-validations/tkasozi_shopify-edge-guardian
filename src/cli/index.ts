@@ -117,9 +117,13 @@ async function main() {
 
     // 4. Default: "check" audit execution
     const guardian = new ShopifyEdgeGuardian();
-    const report = enableAi
-      ? await guardian.runAuditAsync(targetPath, { enableAi: true, configPath, licenseKey })
-      : guardian.runAudit(targetPath, { configPath, licenseKey });
+    const resolvedKey = LicenseManager.resolveLicenseKey(licenseKey);
+    const licenseStatus = LicenseManager.verifyLicenseSync(resolvedKey || undefined);
+    const shouldRunAi = enableAi || (licenseStatus.valid && licenseStatus.features.aiSemanticReview);
+
+    const report = shouldRunAi
+      ? await guardian.runAuditAsync(targetPath, { enableAi: true, configPath, licenseKey: resolvedKey || undefined })
+      : guardian.runAudit(targetPath, { configPath, licenseKey: resolvedKey || undefined });
 
     if (outputFile) {
       const outDir = path.dirname(path.resolve(outputFile));
