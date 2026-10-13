@@ -240,7 +240,7 @@ exports.APP_STORE_REVIEW_RULES = [
     },
     {
         id: 'UNSUBSTANTIATED_GUARANTEE',
-        pattern: /\b(?:guaranteed\s+(?:results|100%?|success|sales|increase|growth|roi)|risk[- ]free\s+guarantee|100%\s+free\s+forever|money[- ]back\s+guarantee)\b/i,
+        pattern: /\b(?:guaranteed\s+(?:(?:to\s+)?(?:increase|boost|grow|double)|results|100%?|success|sales|growth|roi)|risk[- ]free\s+guarantee|100%\s+free\s+forever|money[- ]back\s+guarantee)\b/i,
         category: 'EXAGGERATED_LANGUAGE',
         severity: 'ERROR',
         title: 'Unsubstantiated Guarantee Detected',
@@ -249,7 +249,7 @@ exports.APP_STORE_REVIEW_RULES = [
     },
     {
         id: 'NUMERICAL_CONVERSION_CLAIM',
-        pattern: /\b(?:(?:double|triple|quadruple|10x|5x|2x)\s+(?:your\s+)?(?:sales|conversion|revenue|profit|aov)|(?:boost|increase|grow)\s+(?:sales|revenue|conversion)\s+by\s+\d+%?)/i,
+        pattern: /\b(?:(?:double|triple|quadruple|10x|5x|2x)\s+(?:your\s+)?(?:sales|conversion|revenue|profit|aov)|(?:boost|increase|grow)\s+(?:(?:store|your|merchant)\s+)?(?:sales|revenue|conversion)\s+by\s+\d+%?)/i,
         category: 'EXAGGERATED_LANGUAGE',
         severity: 'WARNING',
         title: 'Unverifiable Numerical Sales Claim',

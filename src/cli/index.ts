@@ -140,18 +140,20 @@ async function main() {
     }
 
     if (!report.passed) {
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     if (failOnWarning && report.totalWarnings > 0) {
       console.error(`\n❌  Failed due to ${report.totalWarnings} warning(s) with --fail-on-warning enabled.\n`);
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
-    process.exit(0);
+    process.exitCode = 0;
   } catch (err: any) {
     console.error(`\n❌  Error running Shopify Edge Guardian: ${err.message}\n`);
-    process.exit(1);
+    process.exitCode = 1;
   }
 }
 

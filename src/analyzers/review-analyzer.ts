@@ -9,6 +9,7 @@ import {
   maskComments,
   matchesIgnore,
 } from '../utils/sanitizer.js';
+import { extractUiText } from '../utils/ui-text-extractor.js';
 import { ConfigLoader } from '../config/config-loader.js';
 
 export class ReviewAnalyzer {
@@ -84,57 +85,50 @@ export class ReviewAnalyzer {
       const relPath = path.relative(projectRoot, file);
       const ext = path.extname(file).toLowerCase();
       const isMarketingOrConfig = ['.toml', '.md', '.txt', '.json', '.html'].includes(ext);
+      const isUiSource = ['.tsx', '.jsx', '.liquid'].includes(ext) || (ext === '.json' && relPath.toLowerCase().includes('locale'));
 
       // Mask comments in searchable content to prevent false positives in comments
       const searchableContent = maskComments(content, file);
 
-      // (A) Rule-based matching
-      for (const rule of APP_STORE_REVIEW_RULES) {
-        // Exaggerated language and brand misuse are strictly evaluated on marketing/config files
-        // to prevent false positives on code identifiers (e.g. findBestOption)
-        if (rule.category === 'EXAGGERATED_LANGUAGE' && !isMarketingOrConfig) {
-          continue;
-        }
-
-        // Strip global flag and create isolated regex
-        const flags = rule.pattern.flags.replace('g', '') + 'g';
-        const regex = new RegExp(rule.pattern.source, flags);
-        let match: RegExpExecArray | null;
-
-        while ((match = regex.exec(searchableContent)) !== null) {
-          const prefix = searchableContent.slice(0, match.index);
-          const lineNumber = prefix.split('\n').length;
-          const lines = content.split('\n');
-          const lineContent = lines[lineNumber - 1]?.trimEnd() || '';
-
-          if (rule.category === 'EXAGGERATED_LANGUAGE') {
-            exaggeratedLanguageFound = true;
-          } else if (rule.category === 'BRAND_MISUSE') {
-            brandMisuseFound = true;
-          } else {
-            insecurePatternsFound = true;
-          }
-
-          findings.push({
-            id: rule.id,
-            category: 'APP_STORE_REVIEW',
-            severity: rule.severity,
-            title: rule.title,
-            message: `${rule.message} (Matched: "${match[0]}")`,
-            file: relPath,
-            line: lineNumber,
-            matchedPhrase: match[0],
-            lineContent,
-            remediation: rule.remediation,
-          });
-
-          // Only report first instance per rule per file to keep output actionable
-          break;
-        }
-      }
-
-      // (B) Morphological NLP scan for superlative -est inflections in marketing files
+      // (A) Rule-based matching on file content or extracted UI text
       if (isMarketingOrConfig) {
+        // Direct scan for marketing and configuration files
+        for (const rule of APP_STORE_REVIEW_RULES) {
+          const flags = rule.pattern.flags.replace('g', '') + 'g';
+          const regex = new RegExp(rule.pattern.source, flags);
+          let match: RegExpExecArray | null;
+
+          while ((match = regex.exec(searchableContent)) !== null) {
+            const prefix = searchableContent.slice(0, match.index);
+            const lineNumber = prefix.split('\n').length;
+            const lines = content.split('\n');
+            const lineContent = lines[lineNumber - 1]?.trimEnd() || '';
+
+            if (rule.category === 'EXAGGERATED_LANGUAGE') {
+              exaggeratedLanguageFound = true;
+            } else if (rule.category === 'BRAND_MISUSE') {
+              brandMisuseFound = true;
+            } else {
+              insecurePatternsFound = true;
+            }
+
+            findings.push({
+              id: rule.id,
+              category: 'APP_STORE_REVIEW',
+              severity: rule.severity,
+              title: rule.title,
+              message: `${rule.message} (Matched: "${match[0]}")`,
+              file: relPath,
+              line: lineNumber,
+              matchedPhrase: match[0],
+              lineContent,
+              remediation: rule.remediation,
+            });
+            break;
+          }
+        }
+
+        // Morphological NLP scan for superlative -est inflections in marketing files
         const estMatches = searchableContent.match(/\b([a-zA-Z]{4,}est)\b/g);
         if (estMatches) {
           for (const rawWord of estMatches) {
@@ -160,6 +154,130 @@ export class ReviewAnalyzer {
               });
               break;
             }
+          }
+        }
+      } else if (isUiSource) {
+        // UI Source Files (.tsx, .jsx, .liquid, locales/*.json):
+        // 1. Scan for security and checkout bypass patterns across whole file
+        for (const rule of APP_STORE_REVIEW_RULES) {
+          if (rule.category === 'EXAGGERATED_LANGUAGE' || rule.category === 'BRAND_MISUSE') {
+            continue;
+          }
+          const flags = rule.pattern.flags.replace('g', '') + 'g';
+          const regex = new RegExp(rule.pattern.source, flags);
+          let match: RegExpExecArray | null;
+
+          while ((match = regex.exec(searchableContent)) !== null) {
+            const prefix = searchableContent.slice(0, match.index);
+            const lineNumber = prefix.split('\n').length;
+            const lines = content.split('\n');
+            const lineContent = lines[lineNumber - 1]?.trimEnd() || '';
+
+            insecurePatternsFound = true;
+            findings.push({
+              id: rule.id,
+              category: 'APP_STORE_REVIEW',
+              severity: rule.severity,
+              title: rule.title,
+              message: `${rule.message} (Matched: "${match[0]}")`,
+              file: relPath,
+              line: lineNumber,
+              matchedPhrase: match[0],
+              lineContent,
+              remediation: rule.remediation,
+            });
+            break;
+          }
+        }
+
+        // 2. Extract user-facing UI text (JSX text, display props, schema text, locale strings)
+        // to strictly audit merchant-facing copy while omitting code identifiers
+        const uiItems = extractUiText(content, file);
+        for (const uiItem of uiItems) {
+          for (const rule of APP_STORE_REVIEW_RULES) {
+            if (rule.category !== 'EXAGGERATED_LANGUAGE' && rule.category !== 'BRAND_MISUSE') {
+              continue;
+            }
+            const flags = rule.pattern.flags.replace('g', '') + 'g';
+            const regex = new RegExp(rule.pattern.source, flags);
+            const match = regex.exec(uiItem.text);
+            if (match) {
+              if (rule.category === 'EXAGGERATED_LANGUAGE') {
+                exaggeratedLanguageFound = true;
+              } else {
+                brandMisuseFound = true;
+              }
+              findings.push({
+                id: rule.id,
+                category: 'APP_STORE_REVIEW',
+                severity: rule.severity,
+                title: `${rule.title} in UI Component`,
+                message: `${rule.message} (Matched: "${match[0]}" in UI text: "${uiItem.text}")`,
+                file: relPath,
+                line: uiItem.line,
+                matchedPhrase: match[0],
+                lineContent: uiItem.lineContent,
+                remediation: rule.remediation,
+              });
+              break;
+            }
+          }
+
+          // Morphological -est inflection scan on UI text
+          const estMatches = uiItem.text.match(/\b([a-zA-Z]{4,}est)\b/g);
+          if (estMatches) {
+            for (const rawWord of estMatches) {
+              const word = rawWord.toLowerCase();
+              if (!NON_SUPERLATIVE_EST_WORDS.has(word)) {
+                exaggeratedLanguageFound = true;
+                findings.push({
+                  id: `SUPERLATIVE_MORPHOLOGICAL_${word.toUpperCase()}`,
+                  category: 'APP_STORE_REVIEW',
+                  severity: 'ERROR',
+                  title: `Morphological Superlative Detected in UI: "${rawWord}"`,
+                  message: `The superlative claim "${rawWord}" displayed in app UI text violates Shopify App Store guidelines (Section 4.3.3).`,
+                  file: relPath,
+                  line: uiItem.line,
+                  matchedPhrase: rawWord,
+                  lineContent: uiItem.lineContent,
+                  remediation: `Replace "${rawWord}" with an objective description of your app speed or capability.`,
+                });
+                break;
+              }
+            }
+          }
+        }
+      } else {
+        // Plain backend source files (.ts, .js, .rs):
+        // Only evaluate security rules (no false positives on code identifiers)
+        for (const rule of APP_STORE_REVIEW_RULES) {
+          if (rule.category === 'EXAGGERATED_LANGUAGE' || rule.category === 'BRAND_MISUSE') {
+            continue;
+          }
+          const flags = rule.pattern.flags.replace('g', '') + 'g';
+          const regex = new RegExp(rule.pattern.source, flags);
+          let match: RegExpExecArray | null;
+
+          while ((match = regex.exec(searchableContent)) !== null) {
+            const prefix = searchableContent.slice(0, match.index);
+            const lineNumber = prefix.split('\n').length;
+            const lines = content.split('\n');
+            const lineContent = lines[lineNumber - 1]?.trimEnd() || '';
+
+            insecurePatternsFound = true;
+            findings.push({
+              id: rule.id,
+              category: 'APP_STORE_REVIEW',
+              severity: rule.severity,
+              title: rule.title,
+              message: `${rule.message} (Matched: "${match[0]}")`,
+              file: relPath,
+              line: lineNumber,
+              matchedPhrase: match[0],
+              lineContent,
+              remediation: rule.remediation,
+            });
+            break;
           }
         }
       }
@@ -216,7 +334,8 @@ export class ReviewAnalyzer {
       return result;
     }
 
-    const marketingFiles = this.collectFilesToScan(projectRoot, [], config?.ignore, projectRoot).filter((f) => {
+    const allFiles = this.collectFilesToScan(projectRoot, [], config?.ignore, projectRoot);
+    const marketingFiles = allFiles.filter((f) => {
       const ext = path.extname(f).toLowerCase();
       const base = path.basename(f).toLowerCase();
       if (
@@ -229,7 +348,16 @@ export class ReviewAnalyzer {
         return false;
       }
       return ['.md', '.txt'].includes(ext) || base === 'shopify.app.toml';
-    }).slice(0, 5);
+    }).slice(0, 3);
+
+    const uiCandidateFiles = allFiles.filter((f) => {
+      const ext = path.extname(f).toLowerCase();
+      const rel = path.relative(projectRoot, f).replace(/\\/g, '/').toLowerCase();
+      return (
+        ['.tsx', '.jsx', '.liquid'].includes(ext) ||
+        (ext === '.json' && rel.includes('locale'))
+      );
+    }).slice(0, 4);
 
     for (const file of marketingFiles) {
       try {
@@ -241,6 +369,40 @@ export class ReviewAnalyzer {
 
         if (aiResult.findings.length > 0) {
           result.exaggeratedLanguageFound = true;
+          result.findings.push(...aiResult.findings);
+        }
+      } catch {
+        // Skip unreadable files
+      }
+    }
+
+    for (const file of uiCandidateFiles) {
+      try {
+        const content = fs.readFileSync(file, 'utf-8');
+        const uiItems = extractUiText(content, file);
+        if (uiItems.length === 0) continue;
+
+        const relPath = path.relative(projectRoot, file);
+        const uiTextPayload = uiItems.map((u) => u.text).join('\n');
+        const aiResult = await this.aiEvaluator.evaluateText(uiTextPayload, {
+          file: relPath,
+          config: aiConfig,
+        });
+
+        if (aiResult.findings.length > 0) {
+          result.exaggeratedLanguageFound = true;
+          for (const f of aiResult.findings) {
+            f.file = relPath;
+            if (f.matchedPhrase) {
+              const matchedItem = uiItems.find((u) =>
+                u.text.toLowerCase().includes(f.matchedPhrase!.toLowerCase())
+              );
+              if (matchedItem) {
+                f.line = matchedItem.line;
+                f.lineContent = matchedItem.lineContent;
+              }
+            }
+          }
           result.findings.push(...aiResult.findings);
         }
       } catch {
