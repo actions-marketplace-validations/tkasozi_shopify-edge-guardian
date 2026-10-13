@@ -11,7 +11,7 @@ export interface LicenseVerifyOptions {
 }
 
 export class LicenseManager {
-  private static defaultEndpoint = 'https://api.edgeguardian.dev';
+  private static defaultEndpoint = 'https://billing.endptsec.com';
   private static defaultTimeoutMs = 2500;
 
   /**

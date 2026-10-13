@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.1] - 2026-10-12
+
+### Changed
+- **Production Licensing Cluster Binding:**
+  - Connected `LicenseManager` default endpoint to the high-availability production cluster at `https://billing.endptsec.com`.
+  - Standardized canonical CI/CD secret on `GUARDIAN_LICENSE_KEY` across `action.yml`, CLI, and documentation (with backward-compatible fallback to `EDGE_GUARDIAN_KEY`).
+  - Added `api-endpoint` input in `action.yml` for configurable custom verification endpoints.
+  - Linked official GitHub Marketplace Action listing (`https://github.com/marketplace/actions/shopify-edge-guardian`) for streamlined tier upgrades.
+
+---
+
 ## [1.1.0] - 2026-10-12
 
 ### Added

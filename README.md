@@ -87,8 +87,26 @@ npx shopify-edge-guardian certify
 | **Multi-App Centralized Fleet Monitoring** | 🔒 | 🔒 | ✅ |
 | **Real-time Slack / Discord Deprecation Alerts** | 🔒 | 🔒 | ✅ |
 
-Get a license key on the [GitHub Marketplace](https://github.com/marketplace/actions/shopify-edge-guardian). Set it as a secret `GUARDIAN_LICENSE_KEY` in GitHub Actions or pass `license: ${{ secrets.GUARDIAN_LICENSE_KEY }}`.
-```
+### 🔑  License Activation & CI/CD Setup
+
+1. **Get an Edge Guardian License:**
+   - **Community Edition:** Free forever on the [GitHub Marketplace](https://github.com/marketplace/actions/shopify-edge-guardian). No key required.
+   - **Pro ($39/mo) & Agency Fleet ($149/mo):** Provisioned automatically via the Endpoint Security Billing Gateway at [`https://billing.endptsec.com`](https://billing.endptsec.com).
+   - Upon subscription, your active key (e.g. `eg_live_...` or `eg_agency_...`) is delivered instantly to your email.
+
+2. **Add Secret to GitHub:**
+   - In your repository, navigate to **Settings > Secrets and variables > Actions > New repository secret**.
+   - Secret Name: `GUARDIAN_LICENSE_KEY`
+   - Secret Value: `eg_live_...`
+
+3. **Configure in GitHub Actions (`.github/workflows/ci.yml`):**
+   ```yaml
+   - name: Run Shopify Edge Guardian
+     uses: tkasozi/shopify-edge-guardian@v1
+     with:
+       path: '.'
+       license: ${{ secrets.GUARDIAN_LICENSE_KEY }}
+   ```
 
 ### Project Configuration (`.edgeguardianrc.json` or `shopify.app.toml`)
 Customize file ignores, rule overrides, or disable Wasm requirements for pure Node/Remix apps by adding `.edgeguardianrc.json` to your repository root:

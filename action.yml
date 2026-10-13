@@ -18,14 +18,27 @@ inputs:
     description: 'Edge Guardian Pro or Agency Fleet License Key'
     required: false
     default: ''
+  api-endpoint:
+    description: 'Endpoint Security Billing & Licensing API endpoint'
+    required: false
+    default: 'https://billing.endptsec.com'
 
 runs:
   using: 'composite'
   steps:
     - name: Run Shopify Edge Guardian
       shell: bash
+      env:
+        GUARDIAN_API_ENDPOINT: ${{ inputs.api-endpoint }}
+        GUARDIAN_LICENSE_KEY: ${{ inputs.license }}
       run: |
-        npx shopify-edge-guardian check "${{ inputs.path }}" \
+        if [ -f "$GITHUB_ACTION_PATH/dist/cli/index.js" ]; then
+          CLI_EXEC="node $GITHUB_ACTION_PATH/dist/cli/index.js"
+        else
+          CLI_EXEC="npx shopify-edge-guardian"
+        fi
+
+        $CLI_EXEC check "${{ inputs.path }}" \
           ${{ inputs.fail-on-warning == 'true' && '--fail-on-warning' || '' }} \
           ${{ inputs.license != '' && format('--license "{0}"', inputs.license) || '' }} \
           --output "$GITHUB_STEP_SUMMARY"
