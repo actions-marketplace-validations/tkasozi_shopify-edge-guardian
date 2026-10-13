@@ -195,8 +195,8 @@ export class ReviewAnalyzer {
     projectRoot: string,
     optionsOrAiConfig?: AiEvaluatorConfig | { aiConfig?: AiEvaluatorConfig; config?: EdgeGuardianConfig }
   ): Promise<ReviewRequirementsResult> {
-    const aiConfig =
-      optionsOrAiConfig && ('apiKey' in optionsOrAiConfig || 'mockResponse' in optionsOrAiConfig || 'enabled' in optionsOrAiConfig)
+    const rawAiConfig =
+      optionsOrAiConfig && ('apiKey' in optionsOrAiConfig || 'mockResponse' in optionsOrAiConfig || 'enabled' in optionsOrAiConfig || 'licenseKey' in optionsOrAiConfig)
         ? (optionsOrAiConfig as AiEvaluatorConfig)
         : (optionsOrAiConfig as { aiConfig?: AiEvaluatorConfig; config?: EdgeGuardianConfig })?.aiConfig;
 
@@ -205,6 +205,12 @@ export class ReviewAnalyzer {
         ? (optionsOrAiConfig as { aiConfig?: AiEvaluatorConfig; config?: EdgeGuardianConfig }).config
         : undefined;
 
+    const licenseKey = rawAiConfig?.licenseKey || config?.licenseKey || process.env.GUARDIAN_LICENSE_KEY || process.env.EDGE_GUARDIAN_KEY;
+    const aiConfig: AiEvaluatorConfig = {
+      ...rawAiConfig,
+      licenseKey,
+    };
+
     const result = this.analyze(projectRoot, config);
     if (!this.aiEvaluator.isAvailable(aiConfig)) {
       return result;
@@ -212,8 +218,18 @@ export class ReviewAnalyzer {
 
     const marketingFiles = this.collectFilesToScan(projectRoot, [], config?.ignore, projectRoot).filter((f) => {
       const ext = path.extname(f).toLowerCase();
-      return ['.md', '.txt', '.json'].includes(ext);
-    });
+      const base = path.basename(f).toLowerCase();
+      if (
+        base.includes('lock') ||
+        base.startsWith('tsconfig') ||
+        base.startsWith('package') ||
+        base.startsWith('.') ||
+        base.includes('license')
+      ) {
+        return false;
+      }
+      return ['.md', '.txt'].includes(ext) || base === 'shopify.app.toml';
+    }).slice(0, 5);
 
     for (const file of marketingFiles) {
       try {

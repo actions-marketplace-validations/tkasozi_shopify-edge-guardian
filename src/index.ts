@@ -110,8 +110,12 @@ export class ShopifyEdgeGuardian {
 
     const compliance = this.complianceAnalyzer.analyze(projectRoot, config);
     const privilegeUsage = this.privilegeAnalyzer.analyze(projectRoot, compliance.scopesRequested, config);
+    const effectiveLicenseKey = options?.licenseKey || config.licenseKey || process.env.GUARDIAN_LICENSE_KEY;
     const reviewRequirements = await this.reviewAnalyzer.analyzeAsync(projectRoot, {
-      aiConfig: options?.aiConfig,
+      aiConfig: {
+        ...options?.aiConfig,
+        licenseKey: effectiveLicenseKey,
+      },
       config,
     });
     const deprecation = this.deprecationAnalyzer.scanDirectory(projectRoot, config);
