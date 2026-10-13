@@ -47,6 +47,7 @@ function parseArgs(args) {
     let outputFile = null;
     let configPath = undefined;
     let licenseKey = undefined;
+    let slackWebhook = undefined;
     let i = 0;
     if (args.length > 0 && ['check', 'activate', 'login', 'status', 'certify'].includes(args[0])) {
         command = args[0];
@@ -65,6 +66,11 @@ function parseArgs(args) {
         }
         else if (arg === '--ai') {
             enableAi = true;
+        }
+        else if (arg === '--slack-webhook') {
+            if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
+                slackWebhook = args[++i];
+            }
         }
         else if (arg === '--output' || arg === '-o') {
             if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
@@ -85,12 +91,12 @@ function parseArgs(args) {
             targetPath = path.resolve(arg);
         }
     }
-    return { command, commandArg, targetPath, failOnWarning, jsonOutput, enableAi, outputFile, configPath, licenseKey };
+    return { command, commandArg, targetPath, failOnWarning, jsonOutput, enableAi, outputFile, configPath, licenseKey, slackWebhook };
 }
 async function main() {
     try {
         const args = process.argv.slice(2);
-        const { command, commandArg, targetPath, failOnWarning, jsonOutput, enableAi, outputFile, configPath, licenseKey } = parseArgs(args);
+        const { command, commandArg, targetPath, failOnWarning, jsonOutput, enableAi, outputFile, configPath, licenseKey, slackWebhook } = parseArgs(args);
         // 1. Handle "activate" / "login"
         if (command === 'activate' || command === 'login') {
             const key = commandArg || licenseKey;
@@ -154,11 +160,30 @@ async function main() {
         // 4. Default: "check" audit execution
         const guardian = new index_js_1.ShopifyEdgeGuardian();
         const resolvedKey = index_js_1.LicenseManager.resolveLicenseKey(licenseKey);
-        const licenseStatus = index_js_1.LicenseManager.verifyLicenseSync(resolvedKey || undefined);
-        const shouldRunAi = enableAi || (licenseStatus.valid && licenseStatus.features.aiSemanticReview);
+        const remoteLicense = await index_js_1.LicenseManager.verifyLicense({
+            licenseKey: resolvedKey || undefined,
+            projectRoot: targetPath,
+        });
+        const shouldRunAi = enableAi || (remoteLicense.valid && remoteLicense.features.aiSemanticReview);
         const report = shouldRunAi
             ? await guardian.runAuditAsync(targetPath, { enableAi: true, configPath, licenseKey: resolvedKey || undefined })
             : guardian.runAudit(targetPath, { configPath, licenseKey: resolvedKey || undefined });
+        // Attach verified license telemetry including slot quota metrics
+        report.license = remoteLicense;
+        report.summaryMarkdown = guardian.reporter.generate(report);
+        // Dispatch Slack deprecation alert if deprecations detected
+        if (report.deprecation && report.deprecation.items.length > 0) {
+            const appInfo = index_js_1.AppDetector.detect(targetPath);
+            const slackRes = await index_js_1.SlackAlerter.dispatchDeprecationAlert({
+                webhookUrl: slackWebhook,
+                appInfo,
+                deprecations: report.deprecation.items,
+                license: remoteLicense,
+            });
+            if (slackRes.delivered) {
+                console.log(`💬  Deprecation alert dispatched to Slack channel for ${appInfo.name}.`);
+            }
+        }
         if (outputFile) {
             const outDir = path.dirname(path.resolve(outputFile));
             if (!fs.existsSync(outDir)) {

@@ -2,12 +2,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { LicenseStatus, LicenseTier } from '../types/index.js';
+import { AppDetector } from '../utils/app-detector.js';
 
 export interface LicenseVerifyOptions {
   licenseKey?: string;
   endpoint?: string;
   timeoutMs?: number;
   skipNetwork?: boolean;
+  projectRoot?: string;
+  appId?: string;
+  appName?: string;
+  repository?: string;
 }
 
 export class LicenseManager {
@@ -61,6 +66,12 @@ export class LicenseManager {
       };
     }
 
+    // Resolve app telemetry for slot quota enforcement
+    const appInfo = AppDetector.detect(options.projectRoot || '.');
+    const appId = options.appId || appInfo.appId;
+    const appName = options.appName || appInfo.name;
+    const repository = options.repository || appInfo.repository;
+
     // Check local valid cache (24 hours)
     const cached = this.readCachedLicense(licenseKey);
     if (cached && !options.skipNetwork) {
@@ -83,6 +94,10 @@ export class LicenseManager {
         },
         body: JSON.stringify({
           licenseKey,
+          projectId: 'shopify-edge-guardian',
+          appId,
+          appName,
+          repository,
           timestamp: new Date().toISOString(),
           nodeVersion: process.version,
         }),
@@ -98,6 +113,11 @@ export class LicenseManager {
           customerEmail: data.customerEmail,
           expiresAt: data.expiresAt,
           features: this.getTierFeatures(data.tier || offlineTier),
+          warning: data.warning,
+          slotsUsed: data.slotsUsed,
+          slotsTotal: data.slotsTotal,
+          appId: data.appId || appId,
+          slackWebhookUrl: data.slackWebhookUrl,
         };
 
         this.writeCachedLicense(licenseKey, verifiedStatus);

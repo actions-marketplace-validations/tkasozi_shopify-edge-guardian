@@ -19,6 +19,10 @@ export interface LicenseStatus {
     officialCertification: boolean;
   };
   warning?: string;
+  slotsUsed?: number;
+  slotsTotal?: number;
+  appId?: string;
+  slackWebhookUrl?: string;
 }
 
 export interface EdgeGuardianConfig {

@@ -22,6 +22,8 @@ export { FleetManager } from './fleet/fleet-manager.js';
 export { MarkdownReporter } from './reporter/markdown-reporter.js';
 export { ConfigLoader, CONFIG_FILE_CANDIDATES } from './config/config-loader.js';
 export { LicenseManager } from './licensing/license-manager.js';
+export { AppDetector, DetectedAppInfo } from './utils/app-detector.js';
+export { SlackAlerter, SlackAlerterOptions } from './notifications/slack-alerter.js';
 
 export class ShopifyEdgeGuardian {
   private complianceAnalyzer = new ComplianceAnalyzer();
@@ -106,7 +108,10 @@ export class ShopifyEdgeGuardian {
     }
   ): Promise<GuardianReport> {
     const config = options?.config || ConfigLoader.loadConfig(projectRoot, options?.configPath);
-    const license = await LicenseManager.verifyLicense({ licenseKey: options?.licenseKey || config.licenseKey });
+    const license = await LicenseManager.verifyLicense({
+      licenseKey: options?.licenseKey || config.licenseKey,
+      projectRoot,
+    });
 
     const compliance = this.complianceAnalyzer.analyze(projectRoot, config);
     const privilegeUsage = this.privilegeAnalyzer.analyze(projectRoot, compliance.scopesRequested, config);

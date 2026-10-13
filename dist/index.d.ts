@@ -12,6 +12,8 @@ export { FleetManager } from './fleet/fleet-manager.js';
 export { MarkdownReporter } from './reporter/markdown-reporter.js';
 export { ConfigLoader, CONFIG_FILE_CANDIDATES } from './config/config-loader.js';
 export { LicenseManager } from './licensing/license-manager.js';
+export { AppDetector, DetectedAppInfo } from './utils/app-detector.js';
+export { SlackAlerter, SlackAlerterOptions } from './notifications/slack-alerter.js';
 export declare class ShopifyEdgeGuardian {
     private complianceAnalyzer;
     private deprecationAnalyzer;

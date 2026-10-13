@@ -4,6 +4,10 @@ export interface LicenseVerifyOptions {
     endpoint?: string;
     timeoutMs?: number;
     skipNetwork?: boolean;
+    projectRoot?: string;
+    appId?: string;
+    appName?: string;
+    repository?: string;
 }
 export declare class LicenseManager {
     private static defaultEndpoint;

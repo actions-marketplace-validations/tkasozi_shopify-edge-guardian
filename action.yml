@@ -22,6 +22,10 @@ inputs:
     description: 'Endpoint Security Billing & Licensing API endpoint'
     required: false
     default: 'https://billing.endptsec.com'
+  slack-webhook:
+    description: 'Slack Incoming Webhook URL for deprecation and compliance alerts'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -31,12 +35,18 @@ runs:
       env:
         GUARDIAN_API_ENDPOINT: ${{ inputs.api-endpoint }}
         INPUT_LICENSE: ${{ inputs.license }}
+        SLACK_WEBHOOK_URL: ${{ inputs.slack-webhook || env.SLACK_WEBHOOK_URL }}
       run: |
         RESOLVED_KEY="${INPUT_LICENSE:-${GUARDIAN_LICENSE_KEY:-${EDGE_GUARDIAN_KEY:-}}}"
         LICENSE_ARG=""
         if [ -n "$RESOLVED_KEY" ]; then
           export GUARDIAN_LICENSE_KEY="$RESOLVED_KEY"
           LICENSE_ARG="--license $RESOLVED_KEY"
+        fi
+
+        SLACK_ARG=""
+        if [ -n "${{ inputs.slack-webhook }}" ]; then
+          SLACK_ARG="--slack-webhook ${{ inputs.slack-webhook }}"
         fi
 
         if [ -f "$GITHUB_ACTION_PATH/dist/cli/index.js" ]; then
@@ -48,4 +58,6 @@ runs:
         $CLI_EXEC check "${{ inputs.path }}" \
           ${{ inputs.fail-on-warning == 'true' && '--fail-on-warning' || '' }} \
           $LICENSE_ARG \
+          $SLACK_ARG \
           --output "$GITHUB_STEP_SUMMARY"
+

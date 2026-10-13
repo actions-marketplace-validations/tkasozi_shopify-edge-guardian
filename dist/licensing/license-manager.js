@@ -37,6 +37,7 @@ exports.LicenseManager = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const os = __importStar(require("os"));
+const app_detector_js_1 = require("../utils/app-detector.js");
 class LicenseManager {
     static defaultEndpoint = 'https://billing.endptsec.com';
     static defaultTimeoutMs = 2500;
@@ -79,6 +80,11 @@ class LicenseManager {
                 warning: 'Invalid license key format. Keys must begin with eg_live_, eg_agency_, or eg_test_.',
             };
         }
+        // Resolve app telemetry for slot quota enforcement
+        const appInfo = app_detector_js_1.AppDetector.detect(options.projectRoot || '.');
+        const appId = options.appId || appInfo.appId;
+        const appName = options.appName || appInfo.name;
+        const repository = options.repository || appInfo.repository;
         // Check local valid cache (24 hours)
         const cached = this.readCachedLicense(licenseKey);
         if (cached && !options.skipNetwork) {
@@ -98,6 +104,10 @@ class LicenseManager {
                 },
                 body: JSON.stringify({
                     licenseKey,
+                    projectId: 'shopify-edge-guardian',
+                    appId,
+                    appName,
+                    repository,
                     timestamp: new Date().toISOString(),
                     nodeVersion: process.version,
                 }),
@@ -112,6 +122,11 @@ class LicenseManager {
                     customerEmail: data.customerEmail,
                     expiresAt: data.expiresAt,
                     features: this.getTierFeatures(data.tier || offlineTier),
+                    warning: data.warning,
+                    slotsUsed: data.slotsUsed,
+                    slotsTotal: data.slotsTotal,
+                    appId: data.appId || appId,
+                    slackWebhookUrl: data.slackWebhookUrl,
                 };
                 this.writeCachedLicense(licenseKey, verifiedStatus);
                 return verifiedStatus;

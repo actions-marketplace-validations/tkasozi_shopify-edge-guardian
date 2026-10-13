@@ -15,10 +15,17 @@ class MarkdownReporter {
         // License Tier & Upgrade CTA
         if (report.license) {
             if (report.license.tier === 'PRO') {
-                md += `> 🛡️  **Tier:** **Edge Guardian Pro** — Verified License Active (AI Review & Edge Profiler Enabled)\n\n`;
+                const slotText = report.license.slotsTotal ? ` • Active App Slot: 1/1` : '';
+                md += `> 🛡️  **Tier:** **Edge Guardian Pro** — Verified License Active${slotText} (AI Review & Edge Profiler Enabled)\n\n`;
             }
             else if (report.license.tier === 'AGENCY_FLEET') {
-                md += `> 🏢  **Tier:** **Edge Guardian Agency Fleet** — Centralized Multi-App Telemetry & Monitoring Active\n\n`;
+                const slotText = report.license.slotsUsed && report.license.slotsTotal
+                    ? ` • Active Apps: **${report.license.slotsUsed} / ${report.license.slotsTotal} Slots** ([Manage Fleet](https://billing.endptsec.com/fleet))`
+                    : '';
+                md += `> 🏢  **Tier:** **Edge Guardian Agency Fleet** — Centralized Multi-App Telemetry Active${slotText}\n\n`;
+                if (report.license.warning) {
+                    md += `> ⚠️  **Fleet Notice:** ${report.license.warning}\n\n`;
+                }
             }
             else {
                 md += `> 💡  **Community Edition** — Basic compliance & deprecation checks.\n`;
