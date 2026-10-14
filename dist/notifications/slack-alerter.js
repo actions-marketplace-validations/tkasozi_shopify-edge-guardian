@@ -10,12 +10,27 @@ class SlackAlerter {
         const webhookUrl = options.webhookUrl ||
             process.env.SLACK_WEBHOOK_URL ||
             options.license?.slackWebhookUrl;
+        if (options.license && options.license.tier !== 'AGENCY_FLEET') {
+            return {
+                delivered: false,
+                error: 'Real-time Slack / Discord Deprecation Alerts require an Agency Fleet license tier ($149/mo).',
+            };
+        }
         if (!webhookUrl) {
-            return { delivered: false, error: 'No Slack webhook URL configured' };
+            return { delivered: false, error: 'No Slack or Discord webhook URL configured' };
         }
-        if (!webhookUrl.startsWith('https://hooks.slack.com/')) {
-            return { delivered: false, error: 'Invalid Slack incoming webhook URL. Must begin with https://hooks.slack.com/' };
+        const isSlack = webhookUrl.startsWith('https://hooks.slack.com/');
+        const isDiscord = webhookUrl.startsWith('https://discord.com/api/webhooks/') ||
+            webhookUrl.startsWith('https://discordapp.com/api/webhooks/');
+        if (!isSlack && !isDiscord) {
+            return {
+                delivered: false,
+                error: 'Invalid incoming webhook URL. Must begin with https://hooks.slack.com/ or https://discord.com/api/webhooks/',
+            };
         }
+        const targetUrl = isDiscord && !webhookUrl.endsWith('/slack')
+            ? `${webhookUrl}/slack`
+            : webhookUrl;
         if (!options.deprecations || options.deprecations.length === 0) {
             return { delivered: false, error: 'No deprecations to report' };
         }
@@ -92,7 +107,7 @@ class SlackAlerter {
             ],
         });
         try {
-            const res = await fetch(webhookUrl, {
+            const res = await fetch(targetUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

@@ -68,7 +68,7 @@ embedded = true
       ],
     });
     expect(resNoWebhook.delivered).toBe(false);
-    expect(resNoWebhook.error).toMatch(/no slack webhook/i);
+    expect(resNoWebhook.error).toMatch(/no slack or discord webhook/i);
 
     const resNoDeprecations = await SlackAlerter.dispatchDeprecationAlert({
       webhookUrl: 'https://hooks.slack.com/services/T000/B000/XXXX',
@@ -90,7 +90,34 @@ embedded = true
       ],
     });
     expect(resInvalidWebhook.delivered).toBe(false);
-    expect(resInvalidWebhook.error).toMatch(/invalid slack incoming webhook url/i);
+    expect(resInvalidWebhook.error).toMatch(/invalid incoming webhook url/i);
+
+    // Gated to Agency Fleet tier when license is provided
+    const resProBlocked = await SlackAlerter.dispatchDeprecationAlert({
+      webhookUrl: 'https://hooks.slack.com/services/T000/B000/XXXX',
+      license: {
+        tier: 'PRO',
+        valid: true,
+        features: {
+          coreLinters: true,
+          aiSemanticReview: true,
+          wasmEdgeProfiler: true,
+          fleetDashboardSync: false,
+          autoRemediation: true,
+          officialCertification: true,
+        },
+      },
+      appInfo: { appId: 'app_1', name: 'Test App', source: 'directory' },
+      deprecations: [
+        {
+          fieldOrEndpoint: 'Shop.plan',
+          deprecatedSince: '2024-04',
+          sunsetDate: '2025-04-01',
+        },
+      ],
+    });
+    expect(resProBlocked.delivered).toBe(false);
+    expect(resProBlocked.error).toMatch(/require an agency fleet license/i);
   });
 
   it('SlackAlerter formats Block Kit and dispatches payload to Slack webhook', async () => {
