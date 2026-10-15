@@ -128,14 +128,26 @@ export class WasmRuntimeSimulator {
 
     if (entryPointName) {
       const entryFn = instance.exports[entryPointName] as Function;
-      const execStart = performance.now();
-      try {
-        entryFn();
-      } catch (err: any) {
-        status = 'TRAPPED';
-        trapMessage = err.message || 'Execution trapped';
+
+      // Warm up and take minimum execution latency across multiple samples
+      // to eliminate cold-start V8 JIT compilation and virtual machine runner jitter
+      let minExecutionMs = Infinity;
+      const iterations = 5;
+      for (let i = 0; i < iterations; i++) {
+        const execStart = performance.now();
+        try {
+          entryFn();
+          status = 'SUCCESS';
+        } catch (err: any) {
+          status = 'TRAPPED';
+          trapMessage = err.message || 'Execution trapped';
+        }
+        const iterationMs = performance.now() - execStart;
+        if (iterationMs < minExecutionMs) {
+          minExecutionMs = iterationMs;
+        }
       }
-      executionTimeMs = Number((performance.now() - execStart).toFixed(3));
+      executionTimeMs = Number(minExecutionMs.toFixed(3));
     }
 
     const totalLatencyMs = Number((instantiationTimeMs + executionTimeMs).toFixed(3));

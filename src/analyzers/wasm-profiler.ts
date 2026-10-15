@@ -260,11 +260,20 @@ export class WasmProfiler {
       return null;
     }
 
+    // 1. Look for .wasm binary files directly in the current directory first
     for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isFile() && entry.name.endsWith('.wasm')) {
-        return fullPath;
-      } else if (entry.isDirectory() && !['node_modules', '.git'].includes(entry.name)) {
+      if (entry.isFile() && entry.name.endsWith('.wasm') && !entry.name.includes('test')) {
+        return path.join(dir, entry.name);
+      }
+    }
+
+    // 2. Recurse into subdirectories, ignoring internal cargo cache and intermediate build folders
+    for (const entry of entries) {
+      if (
+        entry.isDirectory() &&
+        !['node_modules', '.git', 'deps', 'build', 'incremental', '.fingerprint'].includes(entry.name)
+      ) {
+        const fullPath = path.join(dir, entry.name);
         const nested = this.searchWasmRecursive(fullPath, depth - 1);
         if (nested) return nested;
       }

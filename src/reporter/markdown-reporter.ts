@@ -115,10 +115,11 @@ export class MarkdownReporter {
 
     // 6. Wasm Performance Profile
     if (report.wasmProfile && report.wasmProfile.sizeBytes > 0) {
-      const wasmStatus = report.wasmProfile.passed ? '✅  Passed' : '❌  Failed';
+      const sizePassed = report.wasmProfile.sizeBytes <= report.wasmProfile.budgetBytes;
+      const latencyPassed = report.wasmProfile.estimatedExecutionMs <= report.wasmProfile.executionBudgetMs;
       md += `### 6. Rust Wasm Edge Performance Profile\n`;
-      md += `- **Binary Size:** \`${report.wasmProfile.sizeFormatted}\` / \`256 KB\` budget (${wasmStatus})\n`;
-      md += `- **Simulated Edge Latency:** \`${report.wasmProfile.estimatedExecutionMs}ms\` / \`5.0ms\` hard cutoff (Target: < 1.5ms)\n`;
+      md += `- **Binary Size:** \`${report.wasmProfile.sizeFormatted}\` / \`256 KB\` budget (${sizePassed ? '✅  Passed' : '❌  Failed'})\n`;
+      md += `- **Simulated Edge Latency:** \`${report.wasmProfile.estimatedExecutionMs}ms\` / \`5.0ms\` hard cutoff (${latencyPassed ? '✅  Passed' : '❌  Failed'}) (Target: < 1.5ms)\n`;
       if (report.wasmProfile.compileTimeMs !== undefined && report.wasmProfile.executionTimeMs !== undefined) {
         md += `  • *V8 Compile Time:* \`${report.wasmProfile.compileTimeMs}ms\` | *Instantiation:* \`${report.wasmProfile.instantiationTimeMs}ms\` | *Execution:* \`${report.wasmProfile.executionTimeMs}ms\`\n`;
       }
