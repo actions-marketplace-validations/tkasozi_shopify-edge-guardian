@@ -6,20 +6,22 @@ export { ComplianceAnalyzer } from './analyzers/compliance-analyzer.js';
 export { DeprecationAnalyzer } from './analyzers/deprecation-analyzer.js';
 export { WasmProfiler } from './analyzers/wasm-profiler.js';
 export { BfsCanary } from './analyzers/bfs-canary.js';
+export { BfsAnalyzer } from './analyzers/bfs-analyzer.js';
 export { PrivilegeAnalyzer } from './analyzers/privilege-analyzer.js';
 export { ReviewAnalyzer, PluggableAiEvaluator, AiEvaluatorConfig } from './analyzers/review-analyzer.js';
 export { FleetManager } from './fleet/fleet-manager.js';
 export { MarkdownReporter } from './reporter/markdown-reporter.js';
 export { ConfigLoader, CONFIG_FILE_CANDIDATES } from './config/config-loader.js';
-export { LicenseManager } from './licensing/license-manager.js';
 export { AppDetector, DetectedAppInfo } from './utils/app-detector.js';
 export { SlackAlerter, SlackAlerterOptions } from './notifications/slack-alerter.js';
+export { AiProjectThrottle, ThrottleOptions } from './utils/ai-throttle.js';
 export declare class ShopifyEdgeGuardian {
     private complianceAnalyzer;
     private deprecationAnalyzer;
     private wasmProfiler;
     private privilegeAnalyzer;
     private reviewAnalyzer;
+    private bfsAnalyzer;
     private reporter;
     /**
      * Runs a complete pre-flight and CI audit on a Shopify App project:
@@ -32,7 +34,6 @@ export declare class ShopifyEdgeGuardian {
     runAudit(projectRoot: string, options?: {
         config?: EdgeGuardianConfig;
         configPath?: string;
-        licenseKey?: string;
     }): GuardianReport;
     /**
      * Runs an asynchronous audit with optional pluggable AI evaluation on marketing copy.
@@ -42,6 +43,5 @@ export declare class ShopifyEdgeGuardian {
         aiConfig?: AiEvaluatorConfig;
         config?: EdgeGuardianConfig;
         configPath?: string;
-        licenseKey?: string;
     }): Promise<GuardianReport>;
 }

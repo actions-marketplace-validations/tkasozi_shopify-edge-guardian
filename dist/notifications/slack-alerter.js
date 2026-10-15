@@ -4,18 +4,11 @@ exports.SlackAlerter = void 0;
 class SlackAlerter {
     /**
      * Dispatches a Slack Block Kit alert when Shopify API deprecations are detected.
-     * Resolves webhook from explicit parameter, env var SLACK_WEBHOOK_URL, or license status telemetry.
+     * Resolves webhook from explicit parameter or env var SLACK_WEBHOOK_URL.
      */
     static async dispatchDeprecationAlert(options) {
         const webhookUrl = options.webhookUrl ||
-            process.env.SLACK_WEBHOOK_URL ||
-            options.license?.slackWebhookUrl;
-        if (options.license && options.license.tier !== 'AGENCY_FLEET') {
-            return {
-                delivered: false,
-                error: 'Real-time Slack / Discord Deprecation Alerts require an Agency Fleet license tier ($149/mo).',
-            };
-        }
+            process.env.SLACK_WEBHOOK_URL;
         if (!webhookUrl) {
             return { delivered: false, error: 'No Slack or Discord webhook URL configured' };
         }
@@ -96,13 +89,12 @@ class SlackAlerter {
                 ],
             });
         }
-        const fleetPortalUrl = 'https://billing.endptsec.com/fleet';
         blocks.push({
             type: 'context',
             elements: [
                 {
                     type: 'mrkdwn',
-                    text: `🛡️ Sent by *Shopify Edge Guardian* • <${fleetPortalUrl}|Manage Agency Fleet>`,
+                    text: '🛡️ Sent by *Shopify Edge Guardian* • Automated Shopify Deprecation Gatekeeper',
                 },
             ],
         });

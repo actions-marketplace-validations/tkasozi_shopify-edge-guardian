@@ -92,32 +92,32 @@ embedded = true
     expect(resInvalidWebhook.delivered).toBe(false);
     expect(resInvalidWebhook.error).toMatch(/invalid incoming webhook url/i);
 
-    // Gated to Agency Fleet tier when license is provided
-    const resProBlocked = await SlackAlerter.dispatchDeprecationAlert({
-      webhookUrl: 'https://hooks.slack.com/services/T000/B000/XXXX',
-      license: {
-        tier: 'PRO',
-        valid: true,
-        features: {
-          coreLinters: true,
-          aiSemanticReview: true,
-          wasmEdgeProfiler: true,
-          fleetDashboardSync: false,
-          autoRemediation: true,
-          officialCertification: true,
-        },
-      },
-      appInfo: { appId: 'app_1', name: 'Test App', source: 'directory' },
-      deprecations: [
-        {
-          fieldOrEndpoint: 'Shop.plan',
-          deprecatedSince: '2024-04',
-          sunsetDate: '2025-04-01',
-        },
-      ],
-    });
-    expect(resProBlocked.delivered).toBe(false);
-    expect(resProBlocked.error).toMatch(/require an agency fleet license/i);
+    // Open-source: webhook dispatch does not require any license key
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: async () => 'internal error',
+    }) as any;
+
+    try {
+      const resNoLicenseRequired = await SlackAlerter.dispatchDeprecationAlert({
+        webhookUrl: 'https://hooks.slack.com/services/T000/B000/TEST_HOOK',
+        appInfo: { appId: 'app_1', name: 'Test App', source: 'directory' },
+        deprecations: [
+          {
+            fieldOrEndpoint: 'Shop.plan',
+            deprecatedSince: '2024-04',
+            sunsetDate: '2025-04-01',
+          },
+        ],
+      });
+      // Attempted delivery reached HTTP request stage rather than blocking on a license gate
+      expect(resNoLicenseRequired.delivered).toBe(false);
+      expect(resNoLicenseRequired.error).toContain('Slack HTTP 500');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it('SlackAlerter formats Block Kit and dispatches payload to Slack webhook', async () => {
@@ -167,7 +167,7 @@ embedded = true
     }
   });
 
-  it('MarkdownReporter incorporates Agency Fleet slot capacity and portal links', () => {
+  it('MarkdownReporter renders clean report with Sober Commercial Reality Notice for all users', () => {
     const reporter = new MarkdownReporter();
     const mockReport: GuardianReport = {
       timestamp: new Date().toISOString(),
@@ -191,28 +191,13 @@ embedded = true
         items: [],
         findings: [],
       },
-      license: {
-        tier: 'AGENCY_FLEET',
-        valid: true,
-        slotsUsed: 14,
-        slotsTotal: 20,
-        warning: 'Fleet quota exceeded: 21/20 app slots active. In 14-day expansion grace period.',
-        features: {
-          coreLinters: true,
-          aiSemanticReview: true,
-          wasmEdgeProfiler: true,
-          fleetDashboardSync: true,
-          autoRemediation: true,
-          officialCertification: true,
-        },
-      },
       summaryMarkdown: '',
     };
 
     const md = reporter.generate(mockReport);
-    expect(md).toContain('14 / 20 Slots');
-    expect(md).toContain('[Manage Fleet](https://billing.endptsec.com/fleet)');
-    expect(md).toContain('Fleet Notice');
-    expect(md).toContain('14-day expansion grace period');
+    expect(md).toContain('Sober Commercial Reality Notice (Zero Vanity Metrics)');
+    expect(md).toContain('Automated Technical Pre-Flight Checks Passed');
+    expect(md).not.toContain('Upgrade to Pro');
+    expect(md).not.toContain('Manage Fleet');
   });
 });

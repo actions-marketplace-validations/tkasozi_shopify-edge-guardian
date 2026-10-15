@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.APP_STORE_REVIEW_RULES = exports.NON_SUPERLATIVE_EST_WORDS = exports.SCOPE_USAGE_MAP = exports.KNOWN_DEPRECATIONS = exports.SUSPICIOUS_HIGH_RISK_SCOPES = exports.MANDATORY_GDPR_WEBHOOKS = exports.SHOPIFY_PERFORMANCE_LIMITS = void 0;
+exports.CATEGORY_SPECIFIC_RULES = exports.APP_STORE_REVIEW_RULES = exports.NON_SUPERLATIVE_EST_WORDS = exports.SCOPE_USAGE_MAP = exports.KNOWN_DEPRECATIONS = exports.SUSPICIOUS_HIGH_RISK_SCOPES = exports.MANDATORY_GDPR_WEBHOOKS = exports.SHOPIFY_PERFORMANCE_LIMITS = void 0;
 exports.SHOPIFY_PERFORMANCE_LIMITS = {
     WASM_SIZE_BUDGET_BYTES: 256 * 1024, // 256 KB
     WASM_SIZE_WARNING_BYTES: 200 * 1024, // 200 KB
@@ -294,6 +294,76 @@ exports.APP_STORE_REVIEW_RULES = [
         title: 'Off-Platform Checkout or Billing Bypass Detected',
         message: 'Shopify forbids routing merchants or buyers to external checkout or billing processors (Section 1.1.2 & 1.2.1). Apps must use Shopify Checkout and the Shopify Billing API.',
         remediation: 'Replace external payment links with the Shopify Billing API (AppSubscriptionCreate / AppPurchaseOneTimeCreate).',
+    },
+    // 5. Built for Shopify: Prohibited Storefront ScriptTags & Universal Asset API
+    {
+        id: 'BFS_STOREFRONT_SCRIPT_TAG_DEPRECATED',
+        pattern: /(?:\/admin\/api\/[^"']*\/script_tags(?:\.json|\/)?|\bscriptTagCreate\b)/i,
+        category: 'PROHIBITED_SECURITY',
+        severity: 'ERROR',
+        title: 'ScriptTag API Prohibited for Built for Shopify',
+        message: 'ScriptTag API injects render-blocking scripts that degrade storefront Core Web Vitals and loading speed. Apps must use Theme App Extensions.',
+        remediation: 'Migrate storefront scripts to Theme App Extensions (app embed blocks).',
+    },
+    {
+        id: 'BFS_ASSET_API_PROHIBITED',
+        pattern: /(?:\/admin\/api\/[^"']*\/assets\.json(?!\?asset(?:%5B|\[)key(?:%5D|\])=layout(?:%2F|\/)theme\.liquid)|\bassetUpdate\b)/i,
+        category: 'PROHIBITED_SECURITY',
+        severity: 'ERROR',
+        title: 'Asset API Usage Prohibited for Built for Shopify',
+        message: 'Shopify Built for Shopify guidelines strictly prohibit using the Asset API. Storefront customizations must use Theme App Extensions.',
+        remediation: 'Remove all Asset API REST/GraphQL operations and migrate storefront functionality to Theme App Extensions (app embed blocks).',
+    },
+];
+exports.CATEGORY_SPECIFIC_RULES = [
+    // Section 5.5 Discount apps
+    {
+        id: 'BFS_DISCOUNT_NO_DRAFT_ORDERS',
+        category: 'discounts',
+        pattern: /(?:\/admin\/api\/[^"']*\/draft_orders(?:\.json|\/)?|\bdraftOrderCreate\b)/i,
+        severity: 'ERROR',
+        title: 'Discounts Category Blocker: Draft Orders Prohibited (Section 5.5.2)',
+        message: 'Shopify Built for Shopify requirement for Discounts category (Section 5.5.2): Apps in the Discounts category must not create draft orders to apply discounts. They must use native Discount APIs or Shopify Functions.',
+        remediation: 'Remove draft order creation. Use GraphQL discountAutomaticAppCreate, discountCodeAppCreate, or Shopify Functions (purchase.discount).',
+    },
+    {
+        id: 'BFS_DISCOUNT_SINGLE_REDEEM_CODE',
+        category: 'discounts',
+        pattern: /\b(?:generateBulkDiscountCodes|discountRedeemCodeBulkCreate)\b/i,
+        severity: 'WARNING',
+        title: 'Discounts Category Criterion: Single Redeem Code Expected (Section 5.5.3)',
+        message: 'Shopify Built for Shopify criteria (Section 5.5.3) expect a single redeem code per discount configuration rather than generating bulk fragmented codes.',
+        remediation: 'Configure a single redeem code per discount definition.',
+    },
+    // Section 5.8 Fulfillment services apps
+    {
+        id: 'BFS_FULFILLMENT_LEGACY_ENDPOINTS',
+        category: 'fulfillment_services',
+        pattern: /(?:\/admin\/api\/[^"']*\/fulfillments(?:\.json|\/)|\bfulfillmentCreate\b)/i,
+        severity: 'ERROR',
+        title: 'Fulfillment Services Blocker: Legacy Fulfillment API Prohibited (Section 5.8.1)',
+        message: 'Shopify Built for Shopify requirement for Fulfillment services apps (Section 5.8.1): Apps must use the Fulfillment Orders API (fulfillmentOrders, fulfillmentOrderAcceptFulfillmentRequest). Legacy Fulfillment endpoints are prohibited.',
+        remediation: 'Migrate to the Fulfillment Orders GraphQL API.',
+    },
+    // Section 5.12 Returns and exchanges apps
+    {
+        id: 'BFS_RETURNS_LEGACY_MULTIPASS',
+        category: 'returns_exchanges',
+        pattern: /\b(?:multipass|generateMultipassToken)\b/i,
+        severity: 'WARNING',
+        title: 'Returns Category Criterion: Customer Account API Authentication (Section 5.12.4)',
+        message: 'Shopify Built for Shopify requirement for Returns and exchanges apps (Section 5.12.4): Buyer self-service return portals must authenticate using the Customer Account API rather than legacy Multipass tokens.',
+        remediation: 'Implement Customer Account API authentication or Customer Account UI extensions.',
+    },
+    // Section 5.14 Subscription apps
+    {
+        id: 'BFS_SUBSCRIPTION_OFF_PLATFORM_AUTH',
+        category: 'subscriptions',
+        pattern: /\b(?:multipass|generateMultipassToken)\b/i,
+        severity: 'WARNING',
+        title: 'Subscription Category Criterion: Customer Account API Authentication (Section 5.14.5)',
+        message: 'Shopify Built for Shopify requirement for Subscription apps (Section 5.14.5): Customer subscriber management portals must authenticate via Customer Account API or Customer Account UI extensions rather than Multipass.',
+        remediation: 'Integrate Customer Account API or build a customer-account UI extension.',
     },
 ];
 //# sourceMappingURL=shopify-rules.js.map

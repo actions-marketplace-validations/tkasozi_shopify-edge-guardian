@@ -1,46 +1,45 @@
 # 🛡️  Shopify Edge Guardian
 
-> **Continuous PR Gatekeeper, "Built for Shopify" (BFS) Defense Engine & Rust Wasm Edge Profiler.**
+> **Continuous PR Gatekeeper, "Built for Shopify" (BFS) Criteria Engine & Rust Wasm Edge Profiler.**
 
-Shopify Edge Guardian protects your Shopify applications and checkout extensions from App Store rejections, GraphQL API deprecation blackouts, edge execution timeouts (>5ms), and silent loss of your **"Built for Shopify"** badge.
+Shopify Edge Guardian is a 100% open-source developer tool that protects your Shopify applications and checkout extensions from App Store rejections, GraphQL API deprecation blackouts, edge execution timeouts (>5ms), and missing **"Built for Shopify"** criteria.
 
 ---
 
 ## 🚀  Key Capabilities
 
-1. **Pre-Flight App Store & GDPR Compliance:**
+1. **Dynamic Category Scoping (Shopify Canonical Taxonomy):**
+   - Automatically detects app category (`discounts`, `shipping`, `payments`, `orders`, `general`) from `shopify.app.toml` scopes and extension targets.
+   - Enforces category-specific requirements (e.g. prohibits Discount apps from creating Draft Orders to apply discounts — a critical BFS review blocker).
+
+2. **Built for Shopify (BFS) Criteria Engine:**
+   - Evaluates performance budgets, admin response latency, and storefront asset size limits (<50 KB).
+   - Validates Embedded Admin Bridge, Session Token authentication, and Polaris design standards.
+   - Strictly prohibits legacy Asset API theme modification (`BFS_ASSET_API_PROHIBITED`) and deprecated ScriptTags (`BFS_STOREFRONT_SCRIPT_TAG_DEPRECATED`).
+   - Accurately reports post-launch merchant utility milestones (50 installs, 5 reviews, 4.0+ rating) without false promises.
+
+3. **Pre-Flight App Store & GDPR Compliance:**
    - Verifies mandatory GDPR endpoints (`customers/data_request`, `customers/redact`, `shop/redact`).
-   - Audits access scopes under the **Principle of Least Privilege** (flags scope bloat like `read_all_orders`).
-   - Enforces App Bridge 3.x embedded standards.
-
-2. **Principle of Least Privilege: Unused Scope Auditing:**
-   - Scans codebase queries and mutations to identify declared scopes that are never used.
-   - Detects overprivileged write scopes where only read queries exist, recommending downgrades to lower merchant install friction.
-
-3. **Shopify App Store Review Blockers & Listing Linter:**
-   - Flags exaggerated claims ("#1 app", "the best", "world's leading") and unsubstantiated guarantees under Section 4.3.3.
-   - Enforces Shopify Trademark and Brand Guidelines (rejects app names leading with "Shopify" without "for Shopify").
-   - Prohibits direct `layout/theme.liquid` code overwrites via the Asset API (Section 5.1.1).
-   - Scans for hardcoded `shpat_` / `shpca_` access tokens.
+   - Audits access scopes under the **Principle of Least Privilege** (flags scope bloat and unused scopes).
+   - Scans for hardcoded `shpat_` / `shpca_` access tokens and direct Liquid code overwrites.
    - Detects off-platform checkout or billing bypasses (Section 1.1.2 & 1.2.1).
 
-4. **Quarterly GraphQL API Deprecation Watchdog:**
-   - Static AST scanner parses `.graphql`, `.ts`, and `.tsx` files for deprecated queries.
-   - Alerts teams to Shopify quarterly deprecation sunsets (`2026-01`, `2026-04`, `2026-07`).
-   - Ingests runtime `X-Shopify-API-Deprecated-Reason` headers.
+4. **App Store Listing & Marketing Copy Review:**
+   - Detects exaggerated claims ("#1 app", "the best", "world's leading") and unsubstantiated guarantees under Section 4.3.3 / 4.3.4.
+   - Enforces Shopify Trademark and Brand Guidelines (rejects app names leading with "Shopify" without "for Shopify").
+   - **Pluggable AI Copilot:** Free cloud semantic evaluation endpoint (`https://billing.endptsec.com`) with per-project rate limiting and 24h content-hash caching, plus Bring-Your-Own-Key (`OPENAI_API_KEY`) support. Gracefully falls back to local deterministic rules if offline.
 
-5. **Rust Wasm Edge Profiler (Shopify Functions):**
+5. **Quarterly GraphQL API Deprecation Watchdog:**
+   - Static AST scanner parses `.graphql`, `.ts`, and `.tsx` files for deprecated queries across quarterly sunsets (`2026-01`, `2026-04`, `2026-07`).
+   - Free real-time alerts dispatched to Slack or Discord webhooks.
+
+6. **Rust Wasm Edge Profiler (Shopify Functions):**
    - Enforces Shopify's **256 KB hard binary budget** and warns at 200 KB.
    - Verifies Link-Time Optimization (`lto = true`) and `opt-level = 'z'` in `Cargo.toml`.
    - Simulates edge execution latency against the **5.0ms hard checkout cutoff**.
 
-6. **"Built for Shopify" (BFS) Continuous Canary:**
-   - Evaluates admin response latency against the **500ms Core Web Vitals** threshold.
-   - Validates Content Security Policy (`frame-ancestors https://admin.shopify.com`).
-   - Probes webhook endpoints with SSRF protection and 5s timeout enforcement.
-
-7. **Multi-App Agency Fleet Dashboard:**
-   - Aggregates compliance, API versions, and Wasm sizes across 20+ client stores in a single view.
+7. **Sober Commercial Reality Notice (Zero Vanity Metrics):**
+   - Explicitly reminds engineering teams that passing automated technical gates does not guarantee marketplace approval or grant the BFS badge without manual Shopify human review and post-launch adoption.
 
 ---
 
@@ -54,65 +53,53 @@ npx shopify-edge-guardian check
 # Fail on warnings (e.g. approaching deprecations or unoptimized LTO)
 npx shopify-edge-guardian check --fail-on-warning
 
-# Output machine-readable JSON
+# Output machine-readable JSON for CI pipelines
 npx shopify-edge-guardian check --json
 
-# Run with optional pluggable AI semantic audit (reads GUARDIAN_AI_KEY or OPENAI_API_KEY)
+# Run with semantic AI copy review (uses free cloud endpoint or OPENAI_API_KEY)
 npx shopify-edge-guardian check --ai
+
+# Send deprecation alerts to Slack or Discord
+npx shopify-edge-guardian check --slack-webhook https://hooks.slack.com/services/...
 
 # Pass a custom configuration file path
 npx shopify-edge-guardian check --config ./custom-guardian.json
-
-# Activate a Pro or Agency Fleet license key
-npx shopify-edge-guardian activate eg_live_...
-
-# Inspect current license status and active entitlements
-npx shopify-edge-guardian status
-
-# Generate official Shopify App Store Submission Dossier
-npx shopify-edge-guardian certify
 ```
 
-### 💰  Editions & Licensing
+### GitHub Actions CI/CD (`.github/workflows/ci.yml`)
+```yaml
+name: Shopify App Gatekeeper
 
-| Feature Capability | Community (Free) | Pro ($39/mo) | Agency Fleet ($149/mo) |
-| :--- | :---: | :---: | :---: |
-| **GDPR Webhooks & App Bridge Checks** | ✅ | ✅ | ✅ |
-| **Principle of Least Privilege Scope Linter** | ✅ | ✅ | ✅ |
-| **Brand Misuse & Prohibited API Scanning** | ✅ | ✅ | ✅ |
-| **Quarterly GraphQL & REST Deprecation Scanner** | ✅ | ✅ | ✅ |
-| **Rust Wasm 256 KB & 5.0ms Edge Simulation** | ✅ | ✅ | ✅ |
-| **Pluggable AI Semantic Listing Copilot** | 🔒 | ✅ | ✅ |
-| **Official Shopify App Store Certification Dossier** | 🔒 | ✅ | ✅ |
-| **Multi-App Centralized Fleet Monitoring** | 🔒 | 🔒 | ✅ |
-| **Real-time Slack / Discord Deprecation Alerts** | 🔒 | 🔒 | ✅ |
+on:
+  pull_request:
+    branches: [main, develop]
 
-### 🔑  License Activation & CI/CD Setup
+jobs:
+  guardian-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-1. **Get an Edge Guardian License:**
-   - **Community Edition:** Free forever on the [GitHub Marketplace](https://github.com/marketplace/actions/shopify-edge-guardian). No key required.
-   - **Pro ($39/mo) & Agency Fleet ($149/mo):** Subscribe and activate instantly on the [Endpoint Security Checkout & Pricing Portal](https://billing.endptsec.com/checkout/shopify-edge-guardian).
-   - Upon subscription, your active key (e.g. `eg_live_...` or `eg_agency_...`) is delivered instantly to your email.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
-2. **Add Secret to GitHub:**
-   - In your repository, navigate to **Settings > Secrets and variables > Actions > New repository secret**.
-   - Secret Name: `GUARDIAN_LICENSE_KEY`
-   - Secret Value: `eg_live_...`
-
-3. **Configure in GitHub Actions (`.github/workflows/ci.yml`):**
-   ```yaml
-   - name: Run Shopify Edge Guardian
-     uses: tkasozi/shopify-edge-guardian@v1
-     with:
-       path: '.'
-       license: ${{ secrets.GUARDIAN_LICENSE_KEY }}
-   ```
+      - name: Run Shopify Edge Guardian
+        uses: tkasozi/shopify-edge-guardian@v1
+        with:
+          path: '.'
+          fail-on-warning: 'false'
+          ai: 'false'
+          slack-webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+```
 
 ### Project Configuration (`.edgeguardianrc.json` or `shopify.app.toml`)
 Customize file ignores, rule overrides, or disable Wasm requirements for pure Node/Remix apps by adding `.edgeguardianrc.json` to your repository root:
 
 ```json
 {
+  "category": "discounts",
   "ignore": [
     "RELEASE_NOTES.md",
     "docs/**",
@@ -132,6 +119,7 @@ Customize file ignores, rule overrides, or disable Wasm requirements for pure No
 Or configure directly inside `shopify.app.toml`:
 ```toml
 [edge_guardian]
+category = "discounts"
 ignore = ["RELEASE_NOTES.md", "docs/**"]
 
 [edge_guardian.rules]
@@ -139,32 +127,6 @@ SUPERLATIVE_EXCLUSIVITY = "off"
 
 [edge_guardian.wasm]
 required = false
-```
-
-### GitHub Actions CI/CD (`.github/workflows/ci.yml`)
-```yaml
-name: Shopify App & Function Gatekeeper
-
-on:
-  pull_request:
-    branches: [main, develop]
-
-jobs:
-  guardian-audit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Run Shopify Edge Guardian
-        uses: ./
-        with:
-          path: '.'
-          fail-on-warning: 'false'
 ```
 
 ---

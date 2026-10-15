@@ -11,6 +11,7 @@ import {
 } from '../utils/sanitizer.js';
 import { extractUiText } from '../utils/ui-text-extractor.js';
 import { ConfigLoader } from '../config/config-loader.js';
+import { AiProjectThrottle, ThrottleOptions } from '../utils/ai-throttle.js';
 
 export class ReviewAnalyzer {
   /**
@@ -314,20 +315,19 @@ export class ReviewAnalyzer {
     optionsOrAiConfig?: AiEvaluatorConfig | { aiConfig?: AiEvaluatorConfig; config?: EdgeGuardianConfig }
   ): Promise<ReviewRequirementsResult> {
     const rawAiConfig =
-      optionsOrAiConfig && ('apiKey' in optionsOrAiConfig || 'mockResponse' in optionsOrAiConfig || 'enabled' in optionsOrAiConfig || 'licenseKey' in optionsOrAiConfig)
+      optionsOrAiConfig && ('apiKey' in optionsOrAiConfig || 'mockResponse' in optionsOrAiConfig || 'enabled' in optionsOrAiConfig)
         ? (optionsOrAiConfig as AiEvaluatorConfig)
         : (optionsOrAiConfig as { aiConfig?: AiEvaluatorConfig; config?: EdgeGuardianConfig })?.aiConfig;
+
+    const aiConfig: AiEvaluatorConfig = {
+      projectKey: projectRoot,
+      ...rawAiConfig,
+    };
 
     const config =
       optionsOrAiConfig && 'config' in optionsOrAiConfig
         ? (optionsOrAiConfig as { aiConfig?: AiEvaluatorConfig; config?: EdgeGuardianConfig }).config
         : undefined;
-
-    const licenseKey = rawAiConfig?.licenseKey || config?.licenseKey || process.env.GUARDIAN_LICENSE_KEY || process.env.EDGE_GUARDIAN_KEY;
-    const aiConfig: AiEvaluatorConfig = {
-      ...rawAiConfig,
-      licenseKey,
-    };
 
     const result = this.analyze(projectRoot, config);
     if (!this.aiEvaluator.isAvailable(aiConfig)) {
@@ -465,7 +465,7 @@ export interface AiEvaluatorConfig {
   apiKey?: string;
   endpoint?: string;
   cloudEndpoint?: string;
-  licenseKey?: string;
+  projectKey?: string;
   model?: string;
   timeoutMs?: number;
   enabled?: boolean;
@@ -484,22 +484,26 @@ export class PluggableAiEvaluator {
   private defaultCloudEndpoint = 'https://billing.endptsec.com';
   private defaultEndpoint = 'https://api.openai.com/v1/chat/completions';
   private defaultModel = 'gpt-4o-mini';
-  private defaultTimeoutMs = 6000;
+  private defaultTimeoutMs = 5000;
+  public throttle: AiProjectThrottle;
+
+  constructor(options?: { throttle?: AiProjectThrottle; throttleOptions?: ThrottleOptions }) {
+    this.throttle = options?.throttle || new AiProjectThrottle(options?.throttleOptions);
+  }
 
   /**
-   * Checks if an AI provider or Cloud AI Fulfillment via license key is available.
+   * Checks if an AI provider or free cloud evaluation tier is available.
    */
   public isAvailable(config?: AiEvaluatorConfig): boolean {
     if (config?.mockResponse) return true;
     if (config?.enabled === false) return false;
-    const licenseKey = config?.licenseKey || process.env.GUARDIAN_LICENSE_KEY || process.env.EDGE_GUARDIAN_KEY;
-    if (licenseKey && licenseKey.trim().length > 0) return true;
-    const key = config?.apiKey || process.env.GUARDIAN_AI_KEY || process.env.OPENAI_API_KEY;
-    return Boolean(key && key.trim().length > 0);
+    if (process.env.GUARDIAN_DISABLE_AI === '1') return false;
+    return true;
   }
 
   /**
-   * Evaluates text content using Cloud AI fulfillment or local LLM against Shopify App Store Guidelines.
+   * Evaluates text content using user-provided API key, default cloud endpoint, or mock against Shopify App Store Guidelines.
+   * Gracefully falls back if cloud AI is throttled or offline so CI builds never fail.
    */
   public async evaluateText(
     text: string,
@@ -546,55 +550,168 @@ export class PluggableAiEvaluator {
         };
       });
 
-      return { claims, findings };
+      return { claims, findings, provider: 'mock' };
     }
 
     if (!this.isAvailable(config)) {
       return { claims: [], findings: [] };
     }
 
-    const licenseKey = config?.licenseKey || process.env.GUARDIAN_LICENSE_KEY || process.env.EDGE_GUARDIAN_KEY;
+    // Direct LLM execution if user explicitly brings their own API key (BYOK: Bring-Your-Own-Key)
+    const apiKey = config?.apiKey || process.env.GUARDIAN_AI_KEY || process.env.OPENAI_API_KEY;
+    if (apiKey && apiKey.trim().length > 0) {
+      return this.evaluateWithOpenAi(text, apiKey.trim(), file, config);
+    }
+
+    // Default: Cloud AI Endpoint (https://billing.endptsec.com/v1/ai/review) with client-side throttle
+    return this.evaluateWithCloudEndpoint(text, file, config);
+  }
+
+  /**
+   * Sanitizes and redacts access tokens and secrets before sending to AI endpoints.
+   */
+  public sanitizeForAi(text: string): string {
+    return text
+      .replace(/\bshpat_[a-fA-F0-9]{32}\b/g, '[REDACTED_TOKEN]')
+      .replace(/\bshpca_[a-fA-F0-9]{32}\b/g, '[REDACTED_TOKEN]')
+      .replace(/client_secret\s*=\s*["'][^"']+["']/gi, 'client_secret = "[REDACTED]"')
+      .slice(0, 3500);
+  }
+
+  private async evaluateWithCloudEndpoint(
+    text: string,
+    file?: string,
+    config?: AiEvaluatorConfig
+  ): Promise<{
+    claims: Array<{ phrase: string; reason: string; severity: 'ERROR' | 'WARNING'; remediation: string }>;
+    findings: Finding[];
+    error?: string;
+    provider?: string;
+  }> {
+    const projectKey = config?.projectKey || 'default';
+    const safeText = this.sanitizeForAi(text);
+
+    // 1. Check 24-hour SHA-256 cache
+    const cached = this.throttle.getCachedResult<{
+      claims: Array<{ phrase: string; reason: string; severity: 'ERROR' | 'WARNING'; remediation: string }>;
+      findings: Finding[];
+      provider?: string;
+    }>(safeText, projectKey);
+
+    if (cached) {
+      return {
+        ...cached,
+        provider: 'cached/cloud',
+      };
+    }
+
+    // 2. Check per-project rate limit and cooldown
+    const throttleCheck = this.throttle.canMakeRequest(projectKey);
+    if (!throttleCheck.allowed) {
+      return {
+        claims: [],
+        findings: [],
+        error: throttleCheck.reason,
+        provider: 'fallback/local-deterministic',
+      };
+    }
+
+    // 3. Dispatch to cloud endpoint with timeout and graceful fallback
     const cloudBase = config?.cloudEndpoint || process.env.GUARDIAN_API_ENDPOINT || this.defaultCloudEndpoint;
+    const endpoint = `${cloudBase.replace(/\/+$/, '')}/v1/ai/review`;
     const timeoutMs = config?.timeoutMs || this.defaultTimeoutMs;
 
-    // 1. Cloud AI Fulfillment via Active License Key (Zero merchant setup required)
-    if (licenseKey && licenseKey.trim().length > 0) {
-      try {
-        const response = await fetch(`${cloudBase}/v1/ai/review`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'Shopify-Edge-Guardian-CLI',
-          },
-          body: JSON.stringify({
-            licenseKey: licenseKey.trim(),
-            text,
-            filePath: file,
-          }),
-          signal: AbortSignal.timeout(timeoutMs),
-        });
+    this.throttle.recordRequest(projectKey);
 
-        if (response.ok) {
-          const data = (await response.json()) as any;
-          return {
-            claims: data.claims || [],
-            findings: data.findings || [],
-            provider: data.provider || 'cloud/edge-guardian-ai',
-          };
-        }
-      } catch {
-        // Fall through to local API key if configured
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Shopify-Edge-Guardian-CLI/OpenSource',
+        },
+        body: JSON.stringify({
+          text: safeText,
+          filePath: file,
+          projectKey,
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      if (!response.ok) {
+        return {
+          claims: [],
+          findings: [],
+          error: `AI Cloud HTTP ${response.status}. Gracefully falling back to deterministic review rules.`,
+          provider: 'fallback/local-deterministic',
+        };
       }
-    }
 
-    // 2. Direct LLM fallback if user provides personal API key
-    const apiKey = config?.apiKey || process.env.GUARDIAN_AI_KEY || process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return { claims: [], findings: [] };
-    }
+      const data = (await response.json()) as any;
+      const rawClaims = Array.isArray(data.claims) ? data.claims : [];
+      const claims = rawClaims.map((c: any) => ({
+        phrase: c.phrase,
+        reason: c.reason,
+        severity: (c.severity || 'ERROR') as 'ERROR' | 'WARNING',
+        remediation: c.remediation || 'Replace with factual, verifiable feature description.',
+      }));
 
+      const lines = text.split('\n');
+      const findings: Finding[] = claims.map((c: any, idx: number) => {
+        let lineNum: number | undefined;
+        let lineContent: string | undefined;
+        const phraseIdx = text.toLowerCase().indexOf(c.phrase.toLowerCase());
+        if (phraseIdx !== -1) {
+          lineNum = text.slice(0, phraseIdx).split('\n').length;
+          lineContent = lines[lineNum - 1]?.trimEnd();
+        }
+
+        return {
+          id: `AI_SUPERLATIVE_CLAIM_${idx + 1}`,
+          category: 'APP_STORE_REVIEW',
+          severity: c.severity,
+          title: `AI Detected Superlative / Exaggerated Claim: "${c.phrase}"`,
+          message: `${c.reason} (Shopify Guidelines Section 4.3.3 / 4.3.4)`,
+          file,
+          line: lineNum,
+          matchedPhrase: c.phrase,
+          lineContent,
+          remediation: c.remediation,
+        };
+      });
+
+      const result = {
+        claims,
+        findings,
+        provider: data.provider || 'cloud/edge-guardian-ai',
+      };
+
+      this.throttle.setCachedResult(safeText, result, projectKey);
+      return result;
+    } catch (err: any) {
+      return {
+        claims: [],
+        findings: [],
+        error: `AI Cloud evaluation unavailable (${err.message}). Gracefully falling back to deterministic rules.`,
+        provider: 'fallback/local-deterministic',
+      };
+    }
+  }
+
+  private async evaluateWithOpenAi(
+    text: string,
+    apiKey: string,
+    file?: string,
+    config?: AiEvaluatorConfig
+  ): Promise<{
+    claims: Array<{ phrase: string; reason: string; severity: 'ERROR' | 'WARNING'; remediation: string }>;
+    findings: Finding[];
+    error?: string;
+    provider?: string;
+  }> {
     const endpoint = config?.endpoint || process.env.GUARDIAN_AI_ENDPOINT || this.defaultEndpoint;
     const model = config?.model || process.env.GUARDIAN_AI_MODEL || this.defaultModel;
+    const timeoutMs = config?.timeoutMs || this.defaultTimeoutMs;
 
     const systemPrompt = `You are a Senior Shopify App Store Review Auditor enforcing Section 4.3.3 (Superlative & Exaggerated Claims) and Section 4.3.4 (Unsubstantiated Guarantees & Exclusivity).
 Analyze the provided app listing copy, markdown description, or text.
@@ -628,7 +745,7 @@ Respond ONLY with valid JSON matching:
           model,
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Audit this Shopify app listing text:\n\n"""\n${text.slice(0, 4000)}\n"""` },
+            { role: 'user', content: `Audit this Shopify app listing text:\n\n"""\n${this.sanitizeForAi(text)}\n"""` },
           ],
           temperature: 0.1,
           response_format: { type: 'json_object' },
@@ -641,6 +758,7 @@ Respond ONLY with valid JSON matching:
           claims: [],
           findings: [],
           error: `AI provider HTTP ${response.status}: ${response.statusText}`,
+          provider: 'byok/openai',
         };
       }
 
@@ -680,12 +798,13 @@ Respond ONLY with valid JSON matching:
         };
       });
 
-      return { claims, findings };
+      return { claims, findings, provider: 'byok/openai' };
     } catch (err: any) {
       return {
         claims: [],
         findings: [],
         error: `AI evaluation call failed: ${err.message}`,
+        provider: 'byok/openai',
       };
     }
   }

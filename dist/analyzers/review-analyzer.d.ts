@@ -1,4 +1,5 @@
 import { EdgeGuardianConfig, Finding, ReviewRequirementsResult } from '../types/index.js';
+import { AiProjectThrottle, ThrottleOptions } from '../utils/ai-throttle.js';
 export declare class ReviewAnalyzer {
     /**
      * Scans configuration files, listing copy, and source code against official
@@ -25,7 +26,7 @@ export interface AiEvaluatorConfig {
     apiKey?: string;
     endpoint?: string;
     cloudEndpoint?: string;
-    licenseKey?: string;
+    projectKey?: string;
     model?: string;
     timeoutMs?: number;
     enabled?: boolean;
@@ -44,12 +45,18 @@ export declare class PluggableAiEvaluator {
     private defaultEndpoint;
     private defaultModel;
     private defaultTimeoutMs;
+    throttle: AiProjectThrottle;
+    constructor(options?: {
+        throttle?: AiProjectThrottle;
+        throttleOptions?: ThrottleOptions;
+    });
     /**
-     * Checks if an AI provider or Cloud AI Fulfillment via license key is available.
+     * Checks if an AI provider or free cloud evaluation tier is available.
      */
     isAvailable(config?: AiEvaluatorConfig): boolean;
     /**
-     * Evaluates text content using Cloud AI fulfillment or local LLM against Shopify App Store Guidelines.
+     * Evaluates text content using user-provided API key, default cloud endpoint, or mock against Shopify App Store Guidelines.
+     * Gracefully falls back if cloud AI is throttled or offline so CI builds never fail.
      */
     evaluateText(text: string, options?: {
         file?: string;
@@ -65,4 +72,10 @@ export declare class PluggableAiEvaluator {
         error?: string;
         provider?: string;
     }>;
+    /**
+     * Sanitizes and redacts access tokens and secrets before sending to AI endpoints.
+     */
+    sanitizeForAi(text: string): string;
+    private evaluateWithCloudEndpoint;
+    private evaluateWithOpenAi;
 }

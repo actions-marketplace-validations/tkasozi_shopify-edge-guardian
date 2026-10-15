@@ -14,16 +14,16 @@ inputs:
     description: 'Fail the check if warnings (e.g. deprecations or unoptimized LTO) are found'
     required: false
     default: 'false'
-  license:
-    description: 'Edge Guardian Pro or Agency Fleet License Key'
+  ai:
+    description: 'Enable AI semantic listing and copy review against Shopify Guidelines'
     required: false
-    default: ''
+    default: 'false'
   api-endpoint:
-    description: 'Endpoint Security Billing & Licensing API endpoint'
+    description: 'Cloud AI endpoint (defaults to https://billing.endptsec.com)'
     required: false
     default: 'https://billing.endptsec.com'
   slack-webhook:
-    description: 'Slack Incoming Webhook URL for deprecation and compliance alerts'
+    description: 'Slack or Discord Incoming Webhook URL for deprecation and compliance alerts'
     required: false
     default: ''
 
@@ -34,14 +34,11 @@ runs:
       shell: bash
       env:
         GUARDIAN_API_ENDPOINT: ${{ inputs.api-endpoint }}
-        INPUT_LICENSE: ${{ inputs.license }}
         SLACK_WEBHOOK_URL: ${{ inputs.slack-webhook || env.SLACK_WEBHOOK_URL }}
       run: |
-        RESOLVED_KEY="${INPUT_LICENSE:-${GUARDIAN_LICENSE_KEY:-${EDGE_GUARDIAN_KEY:-}}}"
-        LICENSE_ARG=""
-        if [ -n "$RESOLVED_KEY" ]; then
-          export GUARDIAN_LICENSE_KEY="$RESOLVED_KEY"
-          LICENSE_ARG="--license $RESOLVED_KEY"
+        AI_ARG=""
+        if [ "${{ inputs.ai }}" = "true" ]; then
+          AI_ARG="--ai"
         fi
 
         SLACK_ARG=""
@@ -57,7 +54,6 @@ runs:
 
         $CLI_EXEC check "${{ inputs.path }}" \
           ${{ inputs.fail-on-warning == 'true' && '--fail-on-warning' || '' }} \
-          $LICENSE_ARG \
+          $AI_ARG \
           $SLACK_ARG \
           --output "$GITHUB_STEP_SUMMARY"
-

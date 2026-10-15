@@ -1,3 +1,4 @@
+import { AppCategory } from '../types/index.js';
 export declare const SHOPIFY_PERFORMANCE_LIMITS: {
     WASM_SIZE_BUDGET_BYTES: number;
     WASM_SIZE_WARNING_BYTES: number;
@@ -34,3 +35,13 @@ export interface ReviewRule {
 }
 export declare const NON_SUPERLATIVE_EST_WORDS: Set<string>;
 export declare const APP_STORE_REVIEW_RULES: ReviewRule[];
+export interface CategoryReviewRule {
+    id: string;
+    category: AppCategory;
+    pattern: RegExp;
+    severity: 'ERROR' | 'WARNING';
+    title: string;
+    message: string;
+    remediation: string;
+}
+export declare const CATEGORY_SPECIFIC_RULES: CategoryReviewRule[];

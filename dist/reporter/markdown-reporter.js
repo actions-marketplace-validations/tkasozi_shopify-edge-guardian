@@ -8,29 +8,16 @@ class MarkdownReporter {
     generate(report) {
         const statusEmoji = report.passed ? '✅' : '❌';
         const statusTitle = report.passed
-            ? 'Shopify Edge Guardian: All Pre-Flight Checks Passed'
+            ? 'Shopify Edge Guardian: Automated Technical Pre-Flight Checks Passed'
             : 'Shopify Edge Guardian: Merge Blocked (Violations Detected)';
         let md = `## ${statusEmoji}  ${statusTitle}\n\n`;
         md += `*Audited at: ${report.timestamp} | Errors: **${report.totalErrors}** | Warnings: **${report.totalWarnings}***\n\n`;
-        // License Tier & Upgrade CTA
-        if (report.license) {
-            if (report.license.tier === 'PRO') {
-                const slotText = report.license.slotsTotal ? ` • Active App Slot: 1/1` : '';
-                md += `> 🛡️  **Tier:** **Edge Guardian Pro** — Verified License Active${slotText} (AI Review & Edge Profiler Enabled)\n\n`;
-            }
-            else if (report.license.tier === 'AGENCY_FLEET') {
-                const slotText = report.license.slotsUsed && report.license.slotsTotal
-                    ? ` • Active Apps: **${report.license.slotsUsed} / ${report.license.slotsTotal} Slots** ([Manage Fleet](https://billing.endptsec.com/fleet))`
-                    : '';
-                md += `> 🏢  **Tier:** **Edge Guardian Agency Fleet** — Centralized Multi-App Telemetry Active${slotText}\n\n`;
-                if (report.license.warning) {
-                    md += `> ⚠️  **Fleet Notice:** ${report.license.warning}\n\n`;
-                }
-            }
-            else {
-                md += `> 💡  **Community Edition** — Basic compliance & deprecation checks.\n`;
-                md += `> 🚀  **Upgrade to Pro or Agency:** Unlock AI semantic listing analysis, Wasm edge runtime simulation, and Multi-App Fleet Dashboard: [Get License Key](https://billing.endptsec.com/checkout/shopify-edge-guardian).\n\n`;
-            }
+        // Sober Reality Notice for Passing Runs
+        if (report.passed) {
+            md += `> ⚠️  **Sober Commercial Reality Notice (Zero Vanity Metrics):**\n`;
+            md += `> • **Automated Code Gates:** Passed (0 errors, 0 review blockers). Conforms to Shopify API and App Bridge standards.\n`;
+            md += `> • **Human Review Requirement:** Automated CI passes do **not** guarantee Shopify App Store approval. Shopify reviewers conduct manual end-to-end QA of merchant onboarding, installation, and configuration.\n`;
+            md += `> • **Built for Shopify Badge Notice:** The BFS badge is **not granted at launch**. It requires post-launch marketplace validation (50+ active paid installs, 5+ reviews, 4.0+ rating).\n\n`;
         }
         // 1. Compliance Summary Table
         md += `### 1. App Store & GDPR Compliance\n`;
@@ -89,10 +76,40 @@ class MarkdownReporter {
             }
             md += `\n`;
         }
-        // 5. Wasm Performance Profile
+        // 5. Built for Shopify (BFS) Readiness Scorecard
+        if (report.bfsScorecard) {
+            md += `### 5. Built for Shopify (BFS) Readiness Scorecard\n`;
+            md += `*Primary App Category: **${report.bfsScorecard.detectedCategory.toUpperCase()}** | Automated Gates: **${report.bfsScorecard.automatedGatesPassed}/${report.bfsScorecard.automatedGatesTotal} Passed** | Post-Launch Milestones: **${report.bfsScorecard.merchantUtilityGatesPending} Pending***\n\n`;
+            md += `| Category / Criteria | Status | Detail |\n`;
+            md += `| :--- | :--- | :--- |\n`;
+            const sections = [
+                { key: 'PERFORMANCE', title: 'Performance Criteria' },
+                { key: 'DESIGN_FUNCTIONALITY', title: 'Design and Functionality' },
+                { key: 'CATEGORY_SPECIFIC', title: `Category-Specific (${report.bfsScorecard.detectedCategory})` },
+                { key: 'MERCHANT_UTILITY', title: 'Merchant Utility (Post-Launch Milestones)' },
+            ];
+            for (const sec of sections) {
+                md += `| **${sec.title}** | | |\n`;
+                const secMetrics = report.bfsScorecard.metrics.filter((m) => m.section === sec.key);
+                for (const m of secMetrics) {
+                    const statusIcon = m.status === 'PASSED'
+                        ? '✅  Passed'
+                        : m.status === 'FAILED'
+                            ? '🔴  Failed'
+                            : m.status === 'WARNING'
+                                ? '🟡  Warning'
+                                : m.status === 'SKIPPED'
+                                    ? '⏭️  Skipped'
+                                    : '⏳  Pending';
+                    md += `| • ${m.name} | ${statusIcon} | ${m.detail} |\n`;
+                }
+            }
+            md += `\n`;
+        }
+        // 6. Wasm Performance Profile
         if (report.wasmProfile && report.wasmProfile.sizeBytes > 0) {
             const wasmStatus = report.wasmProfile.passed ? '✅  Passed' : '❌  Failed';
-            md += `### 5. Rust Wasm Edge Performance Profile\n`;
+            md += `### 6. Rust Wasm Edge Performance Profile\n`;
             md += `- **Binary Size:** \`${report.wasmProfile.sizeFormatted}\` / \`256 KB\` budget (${wasmStatus})\n`;
             md += `- **Simulated Edge Latency:** \`${report.wasmProfile.estimatedExecutionMs}ms\` / \`5.0ms\` hard cutoff (Target: < 1.5ms)\n`;
             if (report.wasmProfile.compileTimeMs !== undefined && report.wasmProfile.executionTimeMs !== undefined) {
@@ -104,7 +121,7 @@ class MarkdownReporter {
             }
             md += `- **Link-Time Optimization (LTO):** ${report.wasmProfile.hasOptimizedLto ? '✅  Optimized' : '⚠️  Unoptimized'}\n\n`;
         }
-        // 6. Detailed Actionable Findings
+        // 7. Detailed Actionable Findings
         const allFindings = [
             ...report.compliance.findings,
             ...(report.privilegeUsage?.findings || []),
@@ -112,10 +129,22 @@ class MarkdownReporter {
             ...report.deprecation.findings,
             ...(report.wasmProfile?.findings || []),
             ...(report.bfsCanary?.findings || []),
+            ...(report.bfsScorecard?.findings || []),
         ];
-        if (allFindings.length > 0) {
-            md += `### 6. Required Action Items\n\n`;
-            for (const f of allFindings) {
+        // Deduplicate findings by key so identical issues are never shown twice
+        const seenFindingKeys = new Set();
+        const uniqueFindings = [];
+        for (const f of allFindings) {
+            const normFile = f.file ? f.file.replace(/\\/g, '/').toLowerCase() : '';
+            const key = `${f.id}:${normFile}:${f.line || ''}`;
+            if (!seenFindingKeys.has(key)) {
+                seenFindingKeys.add(key);
+                uniqueFindings.push(f);
+            }
+        }
+        if (uniqueFindings.length > 0) {
+            md += `### 7. Required Action Items\n\n`;
+            for (const f of uniqueFindings) {
                 const icon = f.severity === 'ERROR' ? '🔴  **ERROR**' : f.severity === 'WARNING' ? '🟡  **WARNING**' : 'ℹ️  **INFO**';
                 md += `- ${icon}: **${f.title}**\n`;
                 if (f.file) {

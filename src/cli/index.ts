@@ -1,27 +1,22 @@
 #!/usr/bin/env node
 import * as fs from 'fs';
 import * as path from 'path';
-import { ShopifyEdgeGuardian, LicenseManager, AppDetector, SlackAlerter } from '../index.js';
+import { ShopifyEdgeGuardian, AppDetector, SlackAlerter } from '../index.js';
 
 function parseArgs(args: string[]) {
   let command = 'check';
-  let commandArg: string | undefined = undefined;
   let targetPath = process.cwd();
   let failOnWarning = false;
   let jsonOutput = false;
   let enableAi = false;
   let outputFile: string | null = null;
   let configPath: string | undefined = undefined;
-  let licenseKey: string | undefined = undefined;
   let slackWebhook: string | undefined = undefined;
 
   let i = 0;
-  if (args.length > 0 && ['check', 'activate', 'login', 'status', 'certify'].includes(args[0])) {
+  if (args.length > 0 && ['check', 'init'].includes(args[0])) {
     command = args[0];
     i = 1;
-    if (['activate', 'login'].includes(command) && i < args.length && !args[i].startsWith('-')) {
-      commandArg = args[i++];
-    }
   }
 
   for (; i < args.length; i++) {
@@ -44,116 +39,52 @@ function parseArgs(args: string[]) {
       if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
         configPath = args[++i];
       }
-    } else if (arg === '--license' || arg === '-l') {
-      if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
-        licenseKey = args[++i];
-      }
     } else if (!arg.startsWith('-') && arg !== 'check') {
       targetPath = path.resolve(arg);
     }
   }
 
-  return { command, commandArg, targetPath, failOnWarning, jsonOutput, enableAi, outputFile, configPath, licenseKey, slackWebhook };
+  return { command, targetPath, failOnWarning, jsonOutput, enableAi, outputFile, configPath, slackWebhook };
 }
 
 async function main() {
   try {
     const args = process.argv.slice(2);
-    const { command, commandArg, targetPath, failOnWarning, jsonOutput, enableAi, outputFile, configPath, licenseKey, slackWebhook } = parseArgs(args);
+    const { command, targetPath, failOnWarning, jsonOutput, enableAi, outputFile, configPath, slackWebhook } = parseArgs(args);
 
-    // 1. Handle "activate" / "login"
-    if (command === 'activate' || command === 'login') {
-      const key = commandArg || licenseKey;
-      if (!key) {
-        console.error('\n❌  Please provide a license key: `shopify-edge-guardian activate eg_live_...`\n');
-        process.exit(1);
+    // 1. Handle "init" (Scaffold .guardianrc.json)
+    if (command === 'init') {
+      const targetConfig = path.join(targetPath, '.guardianrc.json');
+      if (fs.existsSync(targetConfig)) {
+        console.log(`\n⚠️  Configuration file already exists: ${targetConfig}\n`);
+        process.exit(0);
       }
-      LicenseManager.saveLocalLicenseKey(key);
-      const status = await LicenseManager.verifyLicense({ licenseKey: key });
-      if (status.valid) {
-        console.log(`\n✅  Edge Guardian license activated successfully!`);
-        console.log(`🛡️   Tier: ${status.tier}`);
-        if (status.customerEmail) console.log(`📧  Account: ${status.customerEmail}`);
-        if (status.expiresAt) console.log(`📅  Valid until: ${status.expiresAt}\n`);
-      } else {
-        console.warn(`\n⚠️   License key saved, but verification reported: ${status.warning || 'Pending validation'}\n`);
-      }
+      const initialConfig = {
+        $schema: 'https://raw.githubusercontent.com/marketplace/actions/shopify-edge-guardian/main/schema.json',
+        ignore: ['tests/**', 'docs/**', 'CHANGELOG.md'],
+        rules: {},
+        wasm: {
+          required: false,
+        },
+      };
+      fs.writeFileSync(targetConfig, JSON.stringify(initialConfig, null, 2), 'utf-8');
+      console.log(`\n✅  Created default Shopify Edge Guardian configuration: ${targetConfig}\n`);
       process.exit(0);
     }
 
-    // 2. Handle "status"
-    if (command === 'status') {
-      const status = await LicenseManager.verifyLicense({ licenseKey });
-      console.log('\n🛡️  Shopify Edge Guardian License Status:');
-      console.log(`- Tier: ${status.tier}`);
-      console.log(`- Active: ${status.valid ? '✅  Yes' : '❌  No (Community Free Edition)'}`);
-      if (status.licenseKey) console.log(`- Key: ${status.licenseKey.slice(0, 10)}...`);
-      if (status.expiresAt) console.log(`- Expiration: ${status.expiresAt}`);
-      console.log('- Feature Entitlements:');
-      console.log(`  • Core Compliance & Deprecation Linters: ${status.features.coreLinters ? '✅' : '❌'}`);
-      console.log(`  • AI Semantic Listing Audit: ${status.features.aiSemanticReview ? '✅' : '🔒 (Pro / Agency)'}`);
-      console.log(`  • Wasm Edge Performance Simulation: ${status.features.wasmEdgeProfiler ? '✅' : '❌'}`);
-      console.log(`  • Multi-App Fleet Dashboard Sync: ${status.features.fleetDashboardSync ? '✅' : '🔒 (Agency Fleet)'}`);
-      console.log(`  • Official App Store Certification Dossier: ${status.features.officialCertification ? '✅' : '🔒 (Pro / Agency)'}\n`);
-      if (!status.valid) {
-        console.log('🚀  To upgrade or get a license key: https://billing.endptsec.com/checkout/shopify-edge-guardian\n');
-      }
-      process.exit(0);
-    }
-
-    // 3. Handle "certify" (App Store Submission Dossier)
-    if (command === 'certify') {
-      const resolvedKey = LicenseManager.resolveLicenseKey(licenseKey);
-      const status = await LicenseManager.verifyLicense({ licenseKey: resolvedKey || undefined, projectRoot: targetPath });
-
-      if (!status.valid || !status.features.officialCertification) {
-        console.error('\n🔒  The Official Shopify App Store Certification Dossier requires an Edge Guardian Pro or Agency Fleet license.');
-        console.error('🚀  Upgrade to Pro ($39/mo): https://billing.endptsec.com/checkout/shopify-edge-guardian\n');
-        process.exit(1);
-      }
-
-      const guardian = new ShopifyEdgeGuardian();
-      const report = await guardian.runAuditAsync(targetPath, { enableAi: true, configPath, licenseKey: resolvedKey || undefined });
-      const dossierPath = path.join(targetPath, 'SHOPIFY_APP_STORE_CERTIFICATION.md');
-      const dossierContent = `# 🛡️  Shopify App Store Pre-Flight Readiness Certification\n\n` +
-        `**Generated by Shopify Edge Guardian on ${new Date().toISOString()}**\n\n` +
-        `### Verification Status: ${report.passed ? '🟢 PASSED & CERTIFIED' : '🔴 ACTION REQUIRED'}\n\n` +
-        report.summaryMarkdown;
-
-      fs.writeFileSync(dossierPath, dossierContent, 'utf-8');
-      console.log(`\n✅  Shopify App Store Certification dossier generated: ${dossierPath}`);
-      if (!report.passed) {
-        console.error(`❌  Violations must be resolved before submitting to Shopify App Store.\n`);
-        process.exit(1);
-      }
-      process.exit(0);
-    }
-
-    // 4. Default: "check" audit execution
+    // 2. Default: "check" audit execution
     const guardian = new ShopifyEdgeGuardian();
-    const resolvedKey = LicenseManager.resolveLicenseKey(licenseKey);
-    const remoteLicense = await LicenseManager.verifyLicense({
-      licenseKey: resolvedKey || undefined,
-      projectRoot: targetPath,
-    });
-    const shouldRunAi = enableAi || (remoteLicense.valid && remoteLicense.features.aiSemanticReview);
+    const report = enableAi
+      ? await guardian.runAuditAsync(targetPath, { enableAi: true, configPath })
+      : guardian.runAudit(targetPath, { configPath });
 
-    const report = shouldRunAi
-      ? await guardian.runAuditAsync(targetPath, { enableAi: true, configPath, licenseKey: resolvedKey || undefined })
-      : guardian.runAudit(targetPath, { configPath, licenseKey: resolvedKey || undefined });
-
-    // Attach verified license telemetry including slot quota metrics
-    report.license = remoteLicense;
-    report.summaryMarkdown = (guardian as any).reporter.generate(report);
-
-    // Dispatch Slack deprecation alert if deprecations detected
-    if (report.deprecation && report.deprecation.items.length > 0) {
+    // Dispatch Slack deprecation alert if deprecations detected and webhook provided
+    if (report.deprecation && report.deprecation.items.length > 0 && slackWebhook) {
       const appInfo = AppDetector.detect(targetPath);
       const slackRes = await SlackAlerter.dispatchDeprecationAlert({
         webhookUrl: slackWebhook,
         appInfo,
         deprecations: report.deprecation.items,
-        license: remoteLicense,
       });
       if (slackRes.delivered) {
         console.log(`💬  Deprecation alert dispatched to Slack channel for ${appInfo.name}.`);

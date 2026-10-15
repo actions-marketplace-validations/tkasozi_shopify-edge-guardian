@@ -14,7 +14,13 @@ describe('ShopifyEdgeGuardian (Integration)', () => {
     expect(report.totalErrors).toBe(0);
     expect(report.privilegeUsage).toBeDefined();
     expect(report.reviewRequirements).toBeDefined();
-    expect(report.summaryMarkdown).toContain('Shopify Edge Guardian: All Pre-Flight Checks Passed');
+    expect(report.bfsScorecard).toBeDefined();
+    expect(report.bfsScorecard?.detectedCategory).toBe('discounts');
+    expect(report.bfsScorecard?.automatedGatesPassed).toBeGreaterThan(0);
+    expect(report.bfsScorecard?.merchantUtilityGatesPending).toBe(3);
+    expect(report.summaryMarkdown).toContain('Shopify Edge Guardian: Automated Technical Pre-Flight Checks Passed');
+    expect(report.summaryMarkdown).toContain('Sober Commercial Reality Notice');
+    expect(report.summaryMarkdown).toContain('Built for Shopify (BFS) Readiness Scorecard');
     expect(report.summaryMarkdown).toContain('App Store & GDPR Compliance');
     expect(report.summaryMarkdown).toContain('Principle of Least Privilege');
   });
