@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ShopifyEdgeGuardian, AppDetector, SlackAlerter } from '../index.js';
 
-function parseArgs(args: string[]) {
+export function parseArgs(args: string[]) {
   let command = 'check';
   let targetPath = process.cwd();
   let failOnWarning = false;
@@ -14,8 +14,8 @@ function parseArgs(args: string[]) {
   let slackWebhook: string | undefined = undefined;
 
   let i = 0;
-  if (args.length > 0 && ['check', 'init'].includes(args[0])) {
-    command = args[0];
+  if (args.length > 0 && ['check', 'init', 'certify'].includes(args[0])) {
+    command = args[0] === 'certify' ? 'check' : args[0];
     i = 1;
   }
 
@@ -39,8 +39,13 @@ function parseArgs(args: string[]) {
       if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
         configPath = args[++i];
       }
-    } else if (!arg.startsWith('-') && arg !== 'check') {
-      targetPath = path.resolve(arg);
+    } else if (!arg.startsWith('-') && arg !== 'check' && arg !== 'certify') {
+      const resolved = path.resolve(arg);
+      if (fs.existsSync(resolved)) {
+        targetPath = resolved;
+      } else {
+        throw new Error(`Directory or command not found: "${arg}". Usage: shopify-edge-guardian [check|init] [path] [options]`);
+      }
     }
   }
 

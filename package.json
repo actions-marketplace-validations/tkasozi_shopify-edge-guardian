@@ -1,6 +1,6 @@
 {
   "name": "shopify-edge-guardian",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Continuous PR Gatekeeper & Production Canary for Shopify App Store Compliance, Built for Shopify (BFS) Defense, and Rust Wasm Edge Functions",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

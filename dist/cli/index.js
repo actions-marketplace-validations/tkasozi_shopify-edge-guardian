@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.parseArgs = parseArgs;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const index_js_1 = require("../index.js");
@@ -47,8 +48,8 @@ function parseArgs(args) {
     let configPath = undefined;
     let slackWebhook = undefined;
     let i = 0;
-    if (args.length > 0 && ['check', 'init'].includes(args[0])) {
-        command = args[0];
+    if (args.length > 0 && ['check', 'init', 'certify'].includes(args[0])) {
+        command = args[0] === 'certify' ? 'check' : args[0];
         i = 1;
     }
     for (; i < args.length; i++) {
@@ -77,8 +78,14 @@ function parseArgs(args) {
                 configPath = args[++i];
             }
         }
-        else if (!arg.startsWith('-') && arg !== 'check') {
-            targetPath = path.resolve(arg);
+        else if (!arg.startsWith('-') && arg !== 'check' && arg !== 'certify') {
+            const resolved = path.resolve(arg);
+            if (fs.existsSync(resolved)) {
+                targetPath = resolved;
+            }
+            else {
+                throw new Error(`Directory or command not found: "${arg}". Usage: shopify-edge-guardian [check|init] [path] [options]`);
+            }
         }
     }
     return { command, targetPath, failOnWarning, jsonOutput, enableAi, outputFile, configPath, slackWebhook };
