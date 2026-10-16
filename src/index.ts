@@ -2,12 +2,14 @@ import { ComplianceAnalyzer } from './analyzers/compliance-analyzer.js';
 import { DeprecationAnalyzer } from './analyzers/deprecation-analyzer.js';
 import { WasmProfiler } from './analyzers/wasm-profiler.js';
 import { BfsCanary } from './analyzers/bfs-canary.js';
+import { BfsAnalyzer } from './analyzers/bfs-analyzer.js';
 import { PrivilegeAnalyzer } from './analyzers/privilege-analyzer.js';
 import { ReviewAnalyzer, AiEvaluatorConfig } from './analyzers/review-analyzer.js';
 import { FleetManager } from './fleet/fleet-manager.js';
 import { MarkdownReporter } from './reporter/markdown-reporter.js';
 import { EdgeGuardianConfig, GuardianReport } from './types/index.js';
 import { ConfigLoader } from './config/config-loader.js';
+import { AppDetector } from './utils/app-detector.js';
 
 export * from './types/index.js';
 export * from './rules/shopify-rules.js';
@@ -15,11 +17,15 @@ export { ComplianceAnalyzer } from './analyzers/compliance-analyzer.js';
 export { DeprecationAnalyzer } from './analyzers/deprecation-analyzer.js';
 export { WasmProfiler } from './analyzers/wasm-profiler.js';
 export { BfsCanary } from './analyzers/bfs-canary.js';
+export { BfsAnalyzer } from './analyzers/bfs-analyzer.js';
 export { PrivilegeAnalyzer } from './analyzers/privilege-analyzer.js';
 export { ReviewAnalyzer, PluggableAiEvaluator, AiEvaluatorConfig } from './analyzers/review-analyzer.js';
 export { FleetManager } from './fleet/fleet-manager.js';
 export { MarkdownReporter } from './reporter/markdown-reporter.js';
 export { ConfigLoader, CONFIG_FILE_CANDIDATES } from './config/config-loader.js';
+export { AppDetector, DetectedAppInfo } from './utils/app-detector.js';
+export { SlackAlerter, SlackAlerterOptions } from './notifications/slack-alerter.js';
+export { AiProjectThrottle, ThrottleOptions } from './utils/ai-throttle.js';
 
 export class ShopifyEdgeGuardian {
   private complianceAnalyzer = new ComplianceAnalyzer();
@@ -27,6 +33,7 @@ export class ShopifyEdgeGuardian {
   private wasmProfiler = new WasmProfiler();
   private privilegeAnalyzer = new PrivilegeAnalyzer();
   private reviewAnalyzer = new ReviewAnalyzer();
+  private bfsAnalyzer = new BfsAnalyzer();
   private reporter = new MarkdownReporter();
 
   /**
@@ -48,20 +55,43 @@ export class ShopifyEdgeGuardian {
     const reviewRequirements = this.reviewAnalyzer.analyze(projectRoot, config);
     const deprecation = this.deprecationAnalyzer.scanDirectory(projectRoot, config);
     const wasmProfile = this.wasmProfiler.profile(projectRoot, config);
+    const category = AppDetector.detectCategory(projectRoot, config);
+    const bfsAnalysis = this.bfsAnalyzer.analyze(projectRoot, config);
 
-    const totalErrors =
-      compliance.findings.filter((f) => f.severity === 'ERROR').length +
-      privilegeUsage.findings.filter((f) => f.severity === 'ERROR').length +
-      reviewRequirements.findings.filter((f) => f.severity === 'ERROR').length +
-      deprecation.findings.filter((f) => f.severity === 'ERROR').length +
-      wasmProfile.findings.filter((f) => f.severity === 'ERROR').length;
+    const rawFindings = [
+      ...compliance.findings,
+      ...privilegeUsage.findings,
+      ...reviewRequirements.findings,
+      ...deprecation.findings,
+      ...wasmProfile.findings,
+      ...bfsAnalysis.findings,
+    ];
 
-    const totalWarnings =
-      compliance.findings.filter((f) => f.severity === 'WARNING').length +
-      privilegeUsage.findings.filter((f) => f.severity === 'WARNING').length +
-      reviewRequirements.findings.filter((f) => f.severity === 'WARNING').length +
-      deprecation.findings.filter((f) => f.severity === 'WARNING').length +
-      wasmProfile.findings.filter((f) => f.severity === 'WARNING').length;
+    const seenErrorKeys = new Set<string>();
+    let totalErrors = 0;
+    for (const f of rawFindings) {
+      if (f.severity === 'ERROR') {
+        const normFile = f.file ? f.file.replace(/\\/g, '/').toLowerCase() : '';
+        const key = `${f.id}:${normFile}:${f.line || ''}`;
+        if (!seenErrorKeys.has(key)) {
+          seenErrorKeys.add(key);
+          totalErrors++;
+        }
+      }
+    }
+
+    const seenWarningKeys = new Set<string>();
+    let totalWarnings = 0;
+    for (const f of rawFindings) {
+      if (f.severity === 'WARNING') {
+        const normFile = f.file ? f.file.replace(/\\/g, '/').toLowerCase() : '';
+        const key = `${f.id}:${normFile}:${f.line || ''}`;
+        if (!seenWarningKeys.has(key)) {
+          seenWarningKeys.add(key);
+          totalWarnings++;
+        }
+      }
+    }
 
     const passed = totalErrors === 0;
 
@@ -70,11 +100,16 @@ export class ShopifyEdgeGuardian {
       passed,
       totalErrors,
       totalWarnings,
+      category,
       compliance,
       privilegeUsage,
       reviewRequirements,
       deprecation,
       wasmProfile,
+      bfsScorecard: {
+        ...bfsAnalysis.scorecard,
+        findings: bfsAnalysis.findings,
+      },
     };
 
     const summaryMarkdown = this.reporter.generate({
@@ -110,20 +145,43 @@ export class ShopifyEdgeGuardian {
     });
     const deprecation = this.deprecationAnalyzer.scanDirectory(projectRoot, config);
     const wasmProfile = this.wasmProfiler.profile(projectRoot, config);
+    const category = AppDetector.detectCategory(projectRoot, config);
+    const bfsAnalysis = this.bfsAnalyzer.analyze(projectRoot, config);
 
-    const totalErrors =
-      compliance.findings.filter((f) => f.severity === 'ERROR').length +
-      privilegeUsage.findings.filter((f) => f.severity === 'ERROR').length +
-      reviewRequirements.findings.filter((f) => f.severity === 'ERROR').length +
-      deprecation.findings.filter((f) => f.severity === 'ERROR').length +
-      wasmProfile.findings.filter((f) => f.severity === 'ERROR').length;
+    const rawFindings = [
+      ...compliance.findings,
+      ...privilegeUsage.findings,
+      ...reviewRequirements.findings,
+      ...deprecation.findings,
+      ...wasmProfile.findings,
+      ...bfsAnalysis.findings,
+    ];
 
-    const totalWarnings =
-      compliance.findings.filter((f) => f.severity === 'WARNING').length +
-      privilegeUsage.findings.filter((f) => f.severity === 'WARNING').length +
-      reviewRequirements.findings.filter((f) => f.severity === 'WARNING').length +
-      deprecation.findings.filter((f) => f.severity === 'WARNING').length +
-      wasmProfile.findings.filter((f) => f.severity === 'WARNING').length;
+    const seenErrorKeys = new Set<string>();
+    let totalErrors = 0;
+    for (const f of rawFindings) {
+      if (f.severity === 'ERROR') {
+        const normFile = f.file ? f.file.replace(/\\/g, '/').toLowerCase() : '';
+        const key = `${f.id}:${normFile}:${f.line || ''}`;
+        if (!seenErrorKeys.has(key)) {
+          seenErrorKeys.add(key);
+          totalErrors++;
+        }
+      }
+    }
+
+    const seenWarningKeys = new Set<string>();
+    let totalWarnings = 0;
+    for (const f of rawFindings) {
+      if (f.severity === 'WARNING') {
+        const normFile = f.file ? f.file.replace(/\\/g, '/').toLowerCase() : '';
+        const key = `${f.id}:${normFile}:${f.line || ''}`;
+        if (!seenWarningKeys.has(key)) {
+          seenWarningKeys.add(key);
+          totalWarnings++;
+        }
+      }
+    }
 
     const passed = totalErrors === 0;
 
@@ -132,11 +190,16 @@ export class ShopifyEdgeGuardian {
       passed,
       totalErrors,
       totalWarnings,
+      category,
       compliance,
       privilegeUsage,
       reviewRequirements,
       deprecation,
       wasmProfile,
+      bfsScorecard: {
+        ...bfsAnalysis.scorecard,
+        findings: bfsAnalysis.findings,
+      },
     };
 
     const summaryMarkdown = this.reporter.generate({

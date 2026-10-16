@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.1] - 2026-10-12
+
+### Changed
+- **Production Licensing Cluster Binding:**
+  - Connected `LicenseManager` default endpoint to the high-availability production cluster at `https://billing.endptsec.com`.
+  - Standardized canonical CI/CD secret on `GUARDIAN_LICENSE_KEY` across `action.yml`, CLI, and documentation (with backward-compatible fallback to `EDGE_GUARDIAN_KEY`).
+  - Added `api-endpoint` input in `action.yml` for configurable custom verification endpoints.
+  - Linked official GitHub Marketplace Action listing (`https://github.com/marketplace/actions/shopify-edge-guardian`) for streamlined tier upgrades.
+
+---
+
+## [1.1.0] - 2026-10-12
+
+### Added
+- **Commercial Licensing & Entitlement Subsystem (`LicenseManager`):**
+  - Multi-tier support (`COMMUNITY`, `PRO`, `AGENCY_FLEET`) with feature entitlements.
+  - Multi-source resolution: CLI flag (`--license`), environment variables (`GUARDIAN_LICENSE_KEY`, `EDGE_GUARDIAN_KEY`), `.edgeguardianrc.json` / `shopify.app.toml`, and user profile storage (`~/.edgeguardian/config.json`).
+  - Remote verification with local 24-hour cache and resilient 2500ms fail-open fallback for uninterrupted CI/CD builds.
+- **Private Backend Architecture:**
+  - The client package houses the consumer `LicenseManager` (client key resolution, local cache, and fail-open verification).
+  - Server-side billing webhook handlers (Stripe, Lemon Squeezy) and key minting logic are cleanly separated into a private serverless backend service.
+- **CLI Commands & Flags:**
+  - `activate <key>`: Store and activate a license key in `~/.edgeguardian/config.json`.
+  - `status`: Inspect active tier, expiration, cached entitlements, and features.
+  - `certify`: Export the official `SHOPIFY_APP_STORE_CERTIFICATION.md` compliance dossier.
+  - Added `--license` / `-l` CLI option for inline key specification in CI/CD.
+- **GitHub Action Support:**
+  - Added `license` input to `action.yml` to support GitHub Secrets (`license: ${{ secrets.EDGE_GUARDIAN_KEY }}`).
+- **Report Badges & Monetization CTAs:**
+  - Report banners showcasing active Pro / Agency Fleet tiers with expiration and feature verification.
+  - Non-intrusive upgrade callout in Community edition reports linking to upgrade portal.
+
+---
+
 ## [1.0.3] - 2026-10-12
 
 ### Fixed

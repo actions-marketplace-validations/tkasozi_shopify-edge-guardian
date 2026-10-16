@@ -295,4 +295,87 @@ describe('ReviewAnalyzer (Shopify App Store Review Blockers)', () => {
     expect(configured.passed).toBe(true);
     expect(configured.findings).toHaveLength(0);
   });
+
+  it('detects prohibited claims in React/Polaris .tsx UI components while ignoring code identifiers', () => {
+    const dirTsxApp = path.join(testRoot, 'tsx-ui-app');
+    fs.mkdirSync(dirTsxApp, { recursive: true });
+    fs.writeFileSync(
+      path.join(dirTsxApp, 'shopify.app.toml'),
+      `name = "UI Review App for Shopify"\nembedded = true\n`
+    );
+
+    // .tsx file with prohibited UI text on Banner and Text, but with code identifier findBestOption
+    fs.writeFileSync(
+      path.join(dirTsxApp, 'pricing.tsx'),
+      `import React from 'react';
+import { Page, Banner, Text } from '@shopify/polaris';
+
+export default function Pricing() {
+  const findBestOption = () => { return "best"; };
+  const mostPopular = true;
+
+  return (
+    <Page title="Pricing Plans">
+      <Banner title="Guaranteed to increase store revenue by 30%" tone="warning">
+        <Text as="p">The #1 wholesale app on Shopify</Text>
+      </Banner>
+    </Page>
+  );
+}`
+    );
+
+    const result = analyzer.analyze(dirTsxApp);
+
+    expect(result.exaggeratedLanguageFound).toBe(true);
+    expect(result.passed).toBe(false);
+
+    // Matches the Banner title prop
+    const guaranteeFinding = result.findings.find((f) => f.id === 'UNSUBSTANTIATED_GUARANTEE' || f.id === 'NUMERICAL_CONVERSION_CLAIM');
+    expect(guaranteeFinding).toBeDefined();
+    expect(guaranteeFinding?.file).toBe('pricing.tsx');
+
+    // Matches the JSX Text node
+    const superlativeFinding = result.findings.find((f) => f.id === 'SUPERLATIVE_THE_BEST');
+    expect(superlativeFinding).toBeDefined();
+    expect(superlativeFinding?.file).toBe('pricing.tsx');
+
+    // findBestOption code identifier must NOT trigger any finding
+    expect(result.findings.some((f) => f.matchedPhrase?.includes('findBestOption'))).toBe(false);
+  });
+
+  it('detects prohibited claims in Liquid storefront blocks and locale JSON files', () => {
+    const dirLiquidApp = path.join(testRoot, 'liquid-locale-app');
+    const localesDir = path.join(dirLiquidApp, 'locales');
+    fs.mkdirSync(localesDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(dirLiquidApp, 'shopify.app.toml'),
+      `name = "Storefront App for Shopify"\nembedded = true\n`
+    );
+
+    fs.writeFileSync(
+      path.join(dirLiquidApp, 'banner.liquid'),
+      `<div class="banner">
+         <h2>Wholesale Portal</h2>
+         <p>Guaranteed 100% sales increase for all merchants</p>
+       </div>`
+    );
+
+    fs.writeFileSync(
+      path.join(localesDir, 'en.default.json'),
+      JSON.stringify({
+        general: {
+          banner: 'The best app on Shopify for volume discounts',
+        },
+      })
+    );
+
+    const result = analyzer.analyze(dirLiquidApp);
+
+    expect(result.exaggeratedLanguageFound).toBe(true);
+    expect(result.passed).toBe(false);
+
+    expect(result.findings.some((f) => f.file?.includes('banner.liquid'))).toBe(true);
+    expect(result.findings.some((f) => f.file?.includes('en.default.json'))).toBe(true);
+  });
 });

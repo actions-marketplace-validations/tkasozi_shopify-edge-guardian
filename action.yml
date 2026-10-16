@@ -14,13 +14,46 @@ inputs:
     description: 'Fail the check if warnings (e.g. deprecations or unoptimized LTO) are found'
     required: false
     default: 'false'
+  ai:
+    description: 'Enable AI semantic listing and copy review against Shopify Guidelines'
+    required: false
+    default: 'false'
+  api-endpoint:
+    description: 'Cloud AI endpoint (defaults to https://billing.endptsec.com)'
+    required: false
+    default: 'https://billing.endptsec.com'
+  slack-webhook:
+    description: 'Slack or Discord Incoming Webhook URL for deprecation and compliance alerts'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
   steps:
     - name: Run Shopify Edge Guardian
       shell: bash
+      env:
+        GUARDIAN_API_ENDPOINT: ${{ inputs.api-endpoint }}
+        SLACK_WEBHOOK_URL: ${{ inputs.slack-webhook || env.SLACK_WEBHOOK_URL }}
       run: |
-        npx shopify-edge-guardian check "${{ inputs.path }}" \
+        AI_ARG=""
+        if [ "${{ inputs.ai }}" = "true" ]; then
+          AI_ARG="--ai"
+        fi
+
+        SLACK_ARG=""
+        if [ -n "${{ inputs.slack-webhook }}" ]; then
+          SLACK_ARG="--slack-webhook ${{ inputs.slack-webhook }}"
+        fi
+
+        if [ -f "$GITHUB_ACTION_PATH/dist/cli/index.js" ]; then
+          CLI_EXEC="node $GITHUB_ACTION_PATH/dist/cli/index.js"
+        else
+          CLI_EXEC="npx shopify-edge-guardian"
+        fi
+
+        $CLI_EXEC check "${{ inputs.path }}" \
           ${{ inputs.fail-on-warning == 'true' && '--fail-on-warning' || '' }} \
+          $AI_ARG \
+          $SLACK_ARG \
           --output "$GITHUB_STEP_SUMMARY"

@@ -9,7 +9,9 @@ import {
   maskComments,
   matchesIgnore,
 } from '../utils/sanitizer.js';
+import { extractUiText } from '../utils/ui-text-extractor.js';
 import { ConfigLoader } from '../config/config-loader.js';
+import { AiProjectThrottle, ThrottleOptions } from '../utils/ai-throttle.js';
 
 export class ReviewAnalyzer {
   /**
@@ -84,57 +86,50 @@ export class ReviewAnalyzer {
       const relPath = path.relative(projectRoot, file);
       const ext = path.extname(file).toLowerCase();
       const isMarketingOrConfig = ['.toml', '.md', '.txt', '.json', '.html'].includes(ext);
+      const isUiSource = ['.tsx', '.jsx', '.liquid'].includes(ext) || (ext === '.json' && relPath.toLowerCase().includes('locale'));
 
       // Mask comments in searchable content to prevent false positives in comments
       const searchableContent = maskComments(content, file);
 
-      // (A) Rule-based matching
-      for (const rule of APP_STORE_REVIEW_RULES) {
-        // Exaggerated language and brand misuse are strictly evaluated on marketing/config files
-        // to prevent false positives on code identifiers (e.g. findBestOption)
-        if (rule.category === 'EXAGGERATED_LANGUAGE' && !isMarketingOrConfig) {
-          continue;
-        }
-
-        // Strip global flag and create isolated regex
-        const flags = rule.pattern.flags.replace('g', '') + 'g';
-        const regex = new RegExp(rule.pattern.source, flags);
-        let match: RegExpExecArray | null;
-
-        while ((match = regex.exec(searchableContent)) !== null) {
-          const prefix = searchableContent.slice(0, match.index);
-          const lineNumber = prefix.split('\n').length;
-          const lines = content.split('\n');
-          const lineContent = lines[lineNumber - 1]?.trimEnd() || '';
-
-          if (rule.category === 'EXAGGERATED_LANGUAGE') {
-            exaggeratedLanguageFound = true;
-          } else if (rule.category === 'BRAND_MISUSE') {
-            brandMisuseFound = true;
-          } else {
-            insecurePatternsFound = true;
-          }
-
-          findings.push({
-            id: rule.id,
-            category: 'APP_STORE_REVIEW',
-            severity: rule.severity,
-            title: rule.title,
-            message: `${rule.message} (Matched: "${match[0]}")`,
-            file: relPath,
-            line: lineNumber,
-            matchedPhrase: match[0],
-            lineContent,
-            remediation: rule.remediation,
-          });
-
-          // Only report first instance per rule per file to keep output actionable
-          break;
-        }
-      }
-
-      // (B) Morphological NLP scan for superlative -est inflections in marketing files
+      // (A) Rule-based matching on file content or extracted UI text
       if (isMarketingOrConfig) {
+        // Direct scan for marketing and configuration files
+        for (const rule of APP_STORE_REVIEW_RULES) {
+          const flags = rule.pattern.flags.replace('g', '') + 'g';
+          const regex = new RegExp(rule.pattern.source, flags);
+          let match: RegExpExecArray | null;
+
+          while ((match = regex.exec(searchableContent)) !== null) {
+            const prefix = searchableContent.slice(0, match.index);
+            const lineNumber = prefix.split('\n').length;
+            const lines = content.split('\n');
+            const lineContent = lines[lineNumber - 1]?.trimEnd() || '';
+
+            if (rule.category === 'EXAGGERATED_LANGUAGE') {
+              exaggeratedLanguageFound = true;
+            } else if (rule.category === 'BRAND_MISUSE') {
+              brandMisuseFound = true;
+            } else {
+              insecurePatternsFound = true;
+            }
+
+            findings.push({
+              id: rule.id,
+              category: 'APP_STORE_REVIEW',
+              severity: rule.severity,
+              title: rule.title,
+              message: `${rule.message} (Matched: "${match[0]}")`,
+              file: relPath,
+              line: lineNumber,
+              matchedPhrase: match[0],
+              lineContent,
+              remediation: rule.remediation,
+            });
+            break;
+          }
+        }
+
+        // Morphological NLP scan for superlative -est inflections in marketing files
         const estMatches = searchableContent.match(/\b([a-zA-Z]{4,}est)\b/g);
         if (estMatches) {
           for (const rawWord of estMatches) {
@@ -160,6 +155,130 @@ export class ReviewAnalyzer {
               });
               break;
             }
+          }
+        }
+      } else if (isUiSource) {
+        // UI Source Files (.tsx, .jsx, .liquid, locales/*.json):
+        // 1. Scan for security and checkout bypass patterns across whole file
+        for (const rule of APP_STORE_REVIEW_RULES) {
+          if (rule.category === 'EXAGGERATED_LANGUAGE' || rule.category === 'BRAND_MISUSE') {
+            continue;
+          }
+          const flags = rule.pattern.flags.replace('g', '') + 'g';
+          const regex = new RegExp(rule.pattern.source, flags);
+          let match: RegExpExecArray | null;
+
+          while ((match = regex.exec(searchableContent)) !== null) {
+            const prefix = searchableContent.slice(0, match.index);
+            const lineNumber = prefix.split('\n').length;
+            const lines = content.split('\n');
+            const lineContent = lines[lineNumber - 1]?.trimEnd() || '';
+
+            insecurePatternsFound = true;
+            findings.push({
+              id: rule.id,
+              category: 'APP_STORE_REVIEW',
+              severity: rule.severity,
+              title: rule.title,
+              message: `${rule.message} (Matched: "${match[0]}")`,
+              file: relPath,
+              line: lineNumber,
+              matchedPhrase: match[0],
+              lineContent,
+              remediation: rule.remediation,
+            });
+            break;
+          }
+        }
+
+        // 2. Extract user-facing UI text (JSX text, display props, schema text, locale strings)
+        // to strictly audit merchant-facing copy while omitting code identifiers
+        const uiItems = extractUiText(content, file);
+        for (const uiItem of uiItems) {
+          for (const rule of APP_STORE_REVIEW_RULES) {
+            if (rule.category !== 'EXAGGERATED_LANGUAGE' && rule.category !== 'BRAND_MISUSE') {
+              continue;
+            }
+            const flags = rule.pattern.flags.replace('g', '') + 'g';
+            const regex = new RegExp(rule.pattern.source, flags);
+            const match = regex.exec(uiItem.text);
+            if (match) {
+              if (rule.category === 'EXAGGERATED_LANGUAGE') {
+                exaggeratedLanguageFound = true;
+              } else {
+                brandMisuseFound = true;
+              }
+              findings.push({
+                id: rule.id,
+                category: 'APP_STORE_REVIEW',
+                severity: rule.severity,
+                title: `${rule.title} in UI Component`,
+                message: `${rule.message} (Matched: "${match[0]}" in UI text: "${uiItem.text}")`,
+                file: relPath,
+                line: uiItem.line,
+                matchedPhrase: match[0],
+                lineContent: uiItem.lineContent,
+                remediation: rule.remediation,
+              });
+              break;
+            }
+          }
+
+          // Morphological -est inflection scan on UI text
+          const estMatches = uiItem.text.match(/\b([a-zA-Z]{4,}est)\b/g);
+          if (estMatches) {
+            for (const rawWord of estMatches) {
+              const word = rawWord.toLowerCase();
+              if (!NON_SUPERLATIVE_EST_WORDS.has(word)) {
+                exaggeratedLanguageFound = true;
+                findings.push({
+                  id: `SUPERLATIVE_MORPHOLOGICAL_${word.toUpperCase()}`,
+                  category: 'APP_STORE_REVIEW',
+                  severity: 'ERROR',
+                  title: `Morphological Superlative Detected in UI: "${rawWord}"`,
+                  message: `The superlative claim "${rawWord}" displayed in app UI text violates Shopify App Store guidelines (Section 4.3.3).`,
+                  file: relPath,
+                  line: uiItem.line,
+                  matchedPhrase: rawWord,
+                  lineContent: uiItem.lineContent,
+                  remediation: `Replace "${rawWord}" with an objective description of your app speed or capability.`,
+                });
+                break;
+              }
+            }
+          }
+        }
+      } else {
+        // Plain backend source files (.ts, .js, .rs):
+        // Only evaluate security rules (no false positives on code identifiers)
+        for (const rule of APP_STORE_REVIEW_RULES) {
+          if (rule.category === 'EXAGGERATED_LANGUAGE' || rule.category === 'BRAND_MISUSE') {
+            continue;
+          }
+          const flags = rule.pattern.flags.replace('g', '') + 'g';
+          const regex = new RegExp(rule.pattern.source, flags);
+          let match: RegExpExecArray | null;
+
+          while ((match = regex.exec(searchableContent)) !== null) {
+            const prefix = searchableContent.slice(0, match.index);
+            const lineNumber = prefix.split('\n').length;
+            const lines = content.split('\n');
+            const lineContent = lines[lineNumber - 1]?.trimEnd() || '';
+
+            insecurePatternsFound = true;
+            findings.push({
+              id: rule.id,
+              category: 'APP_STORE_REVIEW',
+              severity: rule.severity,
+              title: rule.title,
+              message: `${rule.message} (Matched: "${match[0]}")`,
+              file: relPath,
+              line: lineNumber,
+              matchedPhrase: match[0],
+              lineContent,
+              remediation: rule.remediation,
+            });
+            break;
           }
         }
       }
@@ -195,10 +314,15 @@ export class ReviewAnalyzer {
     projectRoot: string,
     optionsOrAiConfig?: AiEvaluatorConfig | { aiConfig?: AiEvaluatorConfig; config?: EdgeGuardianConfig }
   ): Promise<ReviewRequirementsResult> {
-    const aiConfig =
+    const rawAiConfig =
       optionsOrAiConfig && ('apiKey' in optionsOrAiConfig || 'mockResponse' in optionsOrAiConfig || 'enabled' in optionsOrAiConfig)
         ? (optionsOrAiConfig as AiEvaluatorConfig)
         : (optionsOrAiConfig as { aiConfig?: AiEvaluatorConfig; config?: EdgeGuardianConfig })?.aiConfig;
+
+    const aiConfig: AiEvaluatorConfig = {
+      projectKey: projectRoot,
+      ...rawAiConfig,
+    };
 
     const config =
       optionsOrAiConfig && 'config' in optionsOrAiConfig
@@ -210,10 +334,30 @@ export class ReviewAnalyzer {
       return result;
     }
 
-    const marketingFiles = this.collectFilesToScan(projectRoot, [], config?.ignore, projectRoot).filter((f) => {
+    const allFiles = this.collectFilesToScan(projectRoot, [], config?.ignore, projectRoot);
+    const marketingFiles = allFiles.filter((f) => {
       const ext = path.extname(f).toLowerCase();
-      return ['.md', '.txt', '.json'].includes(ext);
-    });
+      const base = path.basename(f).toLowerCase();
+      if (
+        base.includes('lock') ||
+        base.startsWith('tsconfig') ||
+        base.startsWith('package') ||
+        base.startsWith('.') ||
+        base.includes('license')
+      ) {
+        return false;
+      }
+      return ['.md', '.txt'].includes(ext) || base === 'shopify.app.toml';
+    }).slice(0, 3);
+
+    const uiCandidateFiles = allFiles.filter((f) => {
+      const ext = path.extname(f).toLowerCase();
+      const rel = path.relative(projectRoot, f).replace(/\\/g, '/').toLowerCase();
+      return (
+        ['.tsx', '.jsx', '.liquid'].includes(ext) ||
+        (ext === '.json' && rel.includes('locale'))
+      );
+    }).slice(0, 4);
 
     for (const file of marketingFiles) {
       try {
@@ -225,6 +369,40 @@ export class ReviewAnalyzer {
 
         if (aiResult.findings.length > 0) {
           result.exaggeratedLanguageFound = true;
+          result.findings.push(...aiResult.findings);
+        }
+      } catch {
+        // Skip unreadable files
+      }
+    }
+
+    for (const file of uiCandidateFiles) {
+      try {
+        const content = fs.readFileSync(file, 'utf-8');
+        const uiItems = extractUiText(content, file);
+        if (uiItems.length === 0) continue;
+
+        const relPath = path.relative(projectRoot, file);
+        const uiTextPayload = uiItems.map((u) => u.text).join('\n');
+        const aiResult = await this.aiEvaluator.evaluateText(uiTextPayload, {
+          file: relPath,
+          config: aiConfig,
+        });
+
+        if (aiResult.findings.length > 0) {
+          result.exaggeratedLanguageFound = true;
+          for (const f of aiResult.findings) {
+            f.file = relPath;
+            if (f.matchedPhrase) {
+              const matchedItem = uiItems.find((u) =>
+                u.text.toLowerCase().includes(f.matchedPhrase!.toLowerCase())
+              );
+              if (matchedItem) {
+                f.line = matchedItem.line;
+                f.lineContent = matchedItem.lineContent;
+              }
+            }
+          }
           result.findings.push(...aiResult.findings);
         }
       } catch {
@@ -286,6 +464,8 @@ export class ReviewAnalyzer {
 export interface AiEvaluatorConfig {
   apiKey?: string;
   endpoint?: string;
+  cloudEndpoint?: string;
+  projectKey?: string;
   model?: string;
   timeoutMs?: number;
   enabled?: boolean;
@@ -301,22 +481,29 @@ export interface AiEvaluatorConfig {
 }
 
 export class PluggableAiEvaluator {
+  private defaultCloudEndpoint = 'https://billing.endptsec.com';
   private defaultEndpoint = 'https://api.openai.com/v1/chat/completions';
   private defaultModel = 'gpt-4o-mini';
-  private defaultTimeoutMs = 6000;
+  private defaultTimeoutMs = 5000;
+  public throttle: AiProjectThrottle;
+
+  constructor(options?: { throttle?: AiProjectThrottle; throttleOptions?: ThrottleOptions }) {
+    this.throttle = options?.throttle || new AiProjectThrottle(options?.throttleOptions);
+  }
 
   /**
-   * Checks if an AI provider is configured and available.
+   * Checks if an AI provider or free cloud evaluation tier is available.
    */
   public isAvailable(config?: AiEvaluatorConfig): boolean {
     if (config?.mockResponse) return true;
     if (config?.enabled === false) return false;
-    const key = config?.apiKey || process.env.GUARDIAN_AI_KEY || process.env.OPENAI_API_KEY;
-    return Boolean(key && key.trim().length > 0);
+    if (process.env.GUARDIAN_DISABLE_AI === '1') return false;
+    return true;
   }
 
   /**
-   * Evaluates text content using an LLM against Shopify App Store Guidelines Section 4.3.3 & 4.3.4.
+   * Evaluates text content using user-provided API key, default cloud endpoint, or mock against Shopify App Store Guidelines.
+   * Gracefully falls back if cloud AI is throttled or offline so CI builds never fail.
    */
   public async evaluateText(
     text: string,
@@ -325,6 +512,7 @@ export class PluggableAiEvaluator {
     claims: Array<{ phrase: string; reason: string; severity: 'ERROR' | 'WARNING'; remediation: string }>;
     findings: Finding[];
     error?: string;
+    provider?: string;
   }> {
     const config = options.config;
     const file = options.file;
@@ -362,14 +550,165 @@ export class PluggableAiEvaluator {
         };
       });
 
-      return { claims, findings };
+      return { claims, findings, provider: 'mock' };
     }
 
     if (!this.isAvailable(config)) {
       return { claims: [], findings: [] };
     }
 
+    // Direct LLM execution if user explicitly brings their own API key (BYOK: Bring-Your-Own-Key)
     const apiKey = config?.apiKey || process.env.GUARDIAN_AI_KEY || process.env.OPENAI_API_KEY;
+    if (apiKey && apiKey.trim().length > 0) {
+      return this.evaluateWithOpenAi(text, apiKey.trim(), file, config);
+    }
+
+    // Default: Cloud AI Endpoint (https://billing.endptsec.com/v1/ai/review) with client-side throttle
+    return this.evaluateWithCloudEndpoint(text, file, config);
+  }
+
+  /**
+   * Sanitizes and redacts access tokens and secrets before sending to AI endpoints.
+   */
+  public sanitizeForAi(text: string): string {
+    return text
+      .replace(/\bshpat_[a-fA-F0-9]{32}\b/g, '[REDACTED_TOKEN]')
+      .replace(/\bshpca_[a-fA-F0-9]{32}\b/g, '[REDACTED_TOKEN]')
+      .replace(/client_secret\s*=\s*["'][^"']+["']/gi, 'client_secret = "[REDACTED]"')
+      .slice(0, 3500);
+  }
+
+  private async evaluateWithCloudEndpoint(
+    text: string,
+    file?: string,
+    config?: AiEvaluatorConfig
+  ): Promise<{
+    claims: Array<{ phrase: string; reason: string; severity: 'ERROR' | 'WARNING'; remediation: string }>;
+    findings: Finding[];
+    error?: string;
+    provider?: string;
+  }> {
+    const projectKey = config?.projectKey || 'default';
+    const safeText = this.sanitizeForAi(text);
+
+    // 1. Check 24-hour SHA-256 cache
+    const cached = this.throttle.getCachedResult<{
+      claims: Array<{ phrase: string; reason: string; severity: 'ERROR' | 'WARNING'; remediation: string }>;
+      findings: Finding[];
+      provider?: string;
+    }>(safeText, projectKey);
+
+    if (cached) {
+      return {
+        ...cached,
+        provider: 'cached/cloud',
+      };
+    }
+
+    // 2. Check per-project rate limit and cooldown
+    const throttleCheck = this.throttle.canMakeRequest(projectKey);
+    if (!throttleCheck.allowed) {
+      return {
+        claims: [],
+        findings: [],
+        error: throttleCheck.reason,
+        provider: 'fallback/local-deterministic',
+      };
+    }
+
+    // 3. Dispatch to cloud endpoint with timeout and graceful fallback
+    const cloudBase = config?.cloudEndpoint || process.env.GUARDIAN_API_ENDPOINT || this.defaultCloudEndpoint;
+    const endpoint = `${cloudBase.replace(/\/+$/, '')}/v1/ai/review`;
+    const timeoutMs = config?.timeoutMs || this.defaultTimeoutMs;
+
+    this.throttle.recordRequest(projectKey);
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Shopify-Edge-Guardian-CLI/OpenSource',
+        },
+        body: JSON.stringify({
+          text: safeText,
+          filePath: file,
+          projectKey,
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      if (!response.ok) {
+        return {
+          claims: [],
+          findings: [],
+          error: `AI Cloud HTTP ${response.status}. Gracefully falling back to deterministic review rules.`,
+          provider: 'fallback/local-deterministic',
+        };
+      }
+
+      const data = (await response.json()) as any;
+      const rawClaims = Array.isArray(data.claims) ? data.claims : [];
+      const claims = rawClaims.map((c: any) => ({
+        phrase: c.phrase,
+        reason: c.reason,
+        severity: (c.severity || 'ERROR') as 'ERROR' | 'WARNING',
+        remediation: c.remediation || 'Replace with factual, verifiable feature description.',
+      }));
+
+      const lines = text.split('\n');
+      const findings: Finding[] = claims.map((c: any, idx: number) => {
+        let lineNum: number | undefined;
+        let lineContent: string | undefined;
+        const phraseIdx = text.toLowerCase().indexOf(c.phrase.toLowerCase());
+        if (phraseIdx !== -1) {
+          lineNum = text.slice(0, phraseIdx).split('\n').length;
+          lineContent = lines[lineNum - 1]?.trimEnd();
+        }
+
+        return {
+          id: `AI_SUPERLATIVE_CLAIM_${idx + 1}`,
+          category: 'APP_STORE_REVIEW',
+          severity: c.severity,
+          title: `AI Detected Superlative / Exaggerated Claim: "${c.phrase}"`,
+          message: `${c.reason} (Shopify Guidelines Section 4.3.3 / 4.3.4)`,
+          file,
+          line: lineNum,
+          matchedPhrase: c.phrase,
+          lineContent,
+          remediation: c.remediation,
+        };
+      });
+
+      const result = {
+        claims,
+        findings,
+        provider: data.provider || 'cloud/edge-guardian-ai',
+      };
+
+      this.throttle.setCachedResult(safeText, result, projectKey);
+      return result;
+    } catch (err: any) {
+      return {
+        claims: [],
+        findings: [],
+        error: `AI Cloud evaluation unavailable (${err.message}). Gracefully falling back to deterministic rules.`,
+        provider: 'fallback/local-deterministic',
+      };
+    }
+  }
+
+  private async evaluateWithOpenAi(
+    text: string,
+    apiKey: string,
+    file?: string,
+    config?: AiEvaluatorConfig
+  ): Promise<{
+    claims: Array<{ phrase: string; reason: string; severity: 'ERROR' | 'WARNING'; remediation: string }>;
+    findings: Finding[];
+    error?: string;
+    provider?: string;
+  }> {
     const endpoint = config?.endpoint || process.env.GUARDIAN_AI_ENDPOINT || this.defaultEndpoint;
     const model = config?.model || process.env.GUARDIAN_AI_MODEL || this.defaultModel;
     const timeoutMs = config?.timeoutMs || this.defaultTimeoutMs;
@@ -406,7 +745,7 @@ Respond ONLY with valid JSON matching:
           model,
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Audit this Shopify app listing text:\n\n"""\n${text.slice(0, 4000)}\n"""` },
+            { role: 'user', content: `Audit this Shopify app listing text:\n\n"""\n${this.sanitizeForAi(text)}\n"""` },
           ],
           temperature: 0.1,
           response_format: { type: 'json_object' },
@@ -419,6 +758,7 @@ Respond ONLY with valid JSON matching:
           claims: [],
           findings: [],
           error: `AI provider HTTP ${response.status}: ${response.statusText}`,
+          provider: 'byok/openai',
         };
       }
 
@@ -458,12 +798,13 @@ Respond ONLY with valid JSON matching:
         };
       });
 
-      return { claims, findings };
+      return { claims, findings, provider: 'byok/openai' };
     } catch (err: any) {
       return {
         claims: [],
         findings: [],
         error: `AI evaluation call failed: ${err.message}`,
+        provider: 'byok/openai',
       };
     }
   }
